@@ -25,7 +25,10 @@ import {
   Send,
   Edit,
   History,
-  UserPlus
+  UserPlus,
+  BrainCircuit,
+  MessageSquare,
+  ArrowRight
 } from 'lucide-react';
 
 import {
@@ -212,13 +215,12 @@ const UserSearchInput = ({ value, onChange, onSelect, allUsers }) => {
 };
 
 // Extracted UserProfile component
-const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal }) => {
-  const [search, setSearch] = useState('');
+const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, profileSearch, setProfileSearch }) => {
   const [suggestions, setSuggestions] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
 
   const handleSearch = (val) => {
-    setSearch(val);
+    setProfileSearch(val);
     if (val) {
       const lowerVal = val.toLowerCase();
       setSuggestions(allUsers.filter(u => 
@@ -232,20 +234,20 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal })
 
   // Find full profile data for the searched user
   useEffect(() => {
-    const found = allUsers.find(u => u.username === search);
+    const found = allUsers.find(u => u.username === profileSearch);
     setSelectedUser(found || null);
-  }, [search, allUsers]);
+  }, [profileSearch, allUsers]);
 
   const allRecords = useMemo(() => {
-    if (!search) return [];
+    if (!profileSearch) return [];
     const records = [
       ...issues.map(x=>({...x,src:'issue',date:x.created_at})),
       ...frozen.map(x=>({...x,src:'frozen',date:x.frozen_at})),
       ...features.map(x=>({...x,src:'feature',date:x.created_at})),
       ...refunds.map(x=>({...x,src:'refund',date:x.requested_at}))
-    ].filter(r => r.username === search);
+    ].filter(r => r.username === profileSearch);
     return records.sort((a,b) => (b.date||'').localeCompare(a.date||''));
-  }, [search, issues, frozen, features, refunds]);
+  }, [profileSearch, issues, frozen, features, refunds]);
 
   const createReportForUser = (type) => {
     if (!selectedUser) return;
@@ -264,12 +266,12 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal })
         <div className="relative">
           <div className="flex items-center border border-gray-200 rounded-2xl bg-gray-50/50 overflow-hidden focus-within:ring-2 ring-blue-100">
             <div className="pl-3 pr-4 text-gray-400"><Search size={18}/></div>
-            <input placeholder="نام کاربری، شماره تماس، اینستاگرام یا آیدی تلگرام..." value={search} className="w-full p-3 bg-transparent outline-none text-sm" onChange={(e) => handleSearch(e.target.value)} />
+            <input placeholder="نام کاربری، شماره تماس، اینستاگرام یا آیدی تلگرام..." value={profileSearch} className="w-full p-3 bg-transparent outline-none text-sm" onChange={(e) => handleSearch(e.target.value)} />
           </div>
           {suggestions.length > 0 && (
             <div className="absolute top-full right-0 left-0 bg-white shadow-xl rounded-2xl mt-2 max-h-60 overflow-auto border z-50">
               {suggestions.map((u) => (
-                <div key={u.username} onClick={() => { setSearch(u.username); setSuggestions([]); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b last:border-0 text-sm flex gap-3 items-center">
+                <div key={u.username} onClick={() => { setProfileSearch(u.username); setSuggestions([]); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b last:border-0 text-sm flex gap-3 items-center">
                   <UserAvatar name={u.username} size="sm" />
                   <div className="flex flex-col">
                     <span className="font-semibold text-gray-700">{u.username}</span>
@@ -393,6 +395,154 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal })
   );
 };
 
+// Extracted AI Analysis Tab component
+const AIAnalysisTab = ({ issues, navigateToProfile }) => {
+  const [generalAnalysis, setGeneralAnalysis] = useState(null);
+  const [generalLoading, setGeneralLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+
+  const handleGeneralAnalysis = async () => {
+    setGeneralLoading(true);
+    // Take last 50 issues for broad analysis to avoid token limits
+    const recentIssues = issues.slice(0, 50).map(i => i.desc_text).filter(Boolean);
+    const prompt = `Analyze these user reports and identify the top 3 most common technical problems or user pain points. 
+    Reports: ${JSON.stringify(recentIssues)}
+    Format output as HTML with <ul> and <li> tags, bolding the key terms.`;
+    
+    const res = await callGeminiAI(prompt, false);
+    setGeneralAnalysis(res);
+    setGeneralLoading(false);
+  };
+
+  const handleProblemSearch = async () => {
+    if (!searchQuery) return;
+    setSearchLoading(true);
+    
+    // Prepare data for AI: List of {username, desc}
+    const dataForAI = issues.slice(0, 100).map(i => ({ username: i.username, desc: i.desc_text }));
+    
+    const prompt = `I have a list of user reports: ${JSON.stringify(dataForAI)}.
+    Find the users who have reported a problem similar to this description: "${searchQuery}".
+    Return ONLY a JSON array of objects with "username" and "reason" keys. 
+    Example: [{"username": "ali", "reason": "mentioned login error"}]`;
+
+    const res = await callGeminiAI(prompt, true);
+    setSearchLoading(false);
+    
+    if (res) {
+      try {
+        const parsed = JSON.parse(res);
+        if (Array.isArray(parsed)) {
+          setSearchResults(parsed);
+        } else {
+          alert('Invalid AI response format.');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Could not parse AI response.');
+      }
+    }
+  };
+
+  return (
+    <div className="w-full max-w-6xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-3xl p-8 text-white shadow-lg relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-10 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl"></div>
+        <div className="relative z-10">
+          <h2 className="text-3xl font-extrabold mb-2 flex items-center gap-3">
+            <BrainCircuit size={32} />
+            تحلیل هوشمند جمنای
+          </h2>
+          <p className="text-purple-100 max-w-xl text-sm leading-relaxed">
+            با استفاده از هوش مصنوعی، الگوهای پرتکرار مشکلات کاربران را کشف کنید یا کاربرانی که مشکل خاصی را تجربه کرده‌اند پیدا کنید.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Feature 1: General Analysis */}
+        <div className="bg-white/80 backdrop-blur p-6 rounded-3xl shadow-sm border border-white flex flex-col">
+          <div className="flex items-center gap-3 mb-4">
+             <div className="p-3 bg-purple-100 text-purple-600 rounded-2xl"><TrendingUp size={20}/></div>
+             <h3 className="font-bold text-gray-800">تحلیل کلی گزارشات</h3>
+          </div>
+          <p className="text-xs text-gray-500 mb-6 leading-relaxed">
+            بررسی ۵۰ گزارش اخیر و شناسایی ۳ چالش اصلی که کاربران با آن مواجه هستند.
+          </p>
+          
+          <div className="flex-1 bg-gray-50 rounded-2xl p-5 border border-gray-100 min-h-[200px] text-sm text-gray-700 leading-7">
+            {generalLoading ? (
+              <div className="h-full flex flex-col items-center justify-center text-purple-500 gap-2">
+                <Loader2 size={24} className="animate-spin"/>
+                <span className="text-xs">در حال تحلیل داده‌ها...</span>
+              </div>
+            ) : generalAnalysis ? (
+              <div dangerouslySetInnerHTML={{ __html: generalAnalysis }} />
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-400 text-xs">نتایج تحلیل اینجا نمایش داده می‌شود</div>
+            )}
+          </div>
+
+          <button onClick={handleGeneralAnalysis} disabled={generalLoading} className="mt-4 w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-purple-200 transition flex justify-center gap-2 items-center">
+            {generalLoading ? '...' : <><Sparkles size={16}/> شروع تحلیل هوشمند</>}
+          </button>
+        </div>
+
+        {/* Feature 2: Semantic Search */}
+        <div className="bg-white/80 backdrop-blur p-6 rounded-3xl shadow-sm border border-white flex flex-col">
+          <div className="flex items-center gap-3 mb-4">
+             <div className="p-3 bg-indigo-100 text-indigo-600 rounded-2xl"><Search size={20}/></div>
+             <h3 className="font-bold text-gray-800">یافتن کاربران با مشکل مشابه</h3>
+          </div>
+          
+          <div className="relative mb-4">
+            <input 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="مثلا: کاربرانی که مشکل درگاه پرداخت داشتند..." 
+              className="w-full p-4 pl-12 bg-indigo-50/50 border border-indigo-100 rounded-2xl text-sm outline-none focus:ring-2 ring-indigo-200 transition"
+            />
+            <button 
+              onClick={handleProblemSearch}
+              disabled={searchLoading || !searchQuery}
+              className="absolute left-2 top-2 bottom-2 bg-indigo-600 text-white px-4 rounded-xl text-xs font-bold hover:bg-indigo-700 transition flex items-center gap-1 disabled:opacity-50"
+            >
+              {searchLoading ? <Loader2 size={14} className="animate-spin"/> : <ArrowRight size={14}/>}
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto max-h-[300px] custom-scrollbar space-y-2">
+            {searchResults.length > 0 ? (
+              searchResults.map((res, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl hover:shadow-md transition group">
+                  <div className="flex items-center gap-3">
+                    <UserAvatar name={res.username} size="sm" />
+                    <div>
+                      <div className="font-bold text-sm text-gray-800">{res.username}</div>
+                      <div className="text-[10px] text-gray-500 max-w-[150px] truncate" title={res.reason}>{res.reason}</div>
+                    </div>
+                  </div>
+                  <button onClick={() => navigateToProfile(res.username)} className="text-[10px] bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg font-bold opacity-0 group-hover:opacity-100 transition">
+                    مشاهده
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-gray-400 text-xs py-10">
+                <MessageSquare size={32} className="mb-2 opacity-20"/>
+                هنوز جستجویی انجام نشده است
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   useTailwind();
 
@@ -417,6 +567,9 @@ export default function App() {
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
 
+  // Lifted state for profile search
+  const [profileSearch, setProfileSearch] = useState('');
+
   useEffect(() => {
     const handleResize = () => setSidebarOpen(window.innerWidth >= 768);
     window.addEventListener('resize', handleResize);
@@ -433,6 +586,12 @@ export default function App() {
     } else {
       setLoginError('رمز عبور اشتباه است.');
     }
+  };
+
+  const navigateToProfile = (username) => {
+    setProfileSearch(username);
+    setActiveTab('profile');
+    if (window.innerWidth < 768) setSidebarOpen(false);
   };
 
   useEffect(() => {
@@ -494,7 +653,8 @@ export default function App() {
   }, [issues, frozen, refunds]);
 
   const churnRisks = useMemo(() => {
-    const recentIssues = issues.slice(0, 100);
+    // Filter last ~30 days (taking last 200 items as proxy)
+    const recentIssues = issues.slice(0, 200); 
     const userCounts = {};
     recentIssues.forEach(i => {
       if (!userCounts[i.username]) userCounts[i.username] = { count: 0, issues: [] };
@@ -520,32 +680,19 @@ export default function App() {
 
   const handleAiChurnAnalysis = async (user) => {
     setAiLoading(true);
-    const prompt = `کاربری با نام ${user.username} اخیرا ${user.count} بار مشکل داشته است. شرح مشکلات او: ${JSON.stringify(user.issues)}. لطفا تحلیل کن: 1. سطح عصبانیت احتمالی (1 تا 10). 2. ریشه اصلی مشکل (کوتاه). 3. یک پیام کوتاه و همدلانه برای دلجویی که پشتیبان به او بگوید. خروجی فقط JSON باشد: {"anger_score": number, "root_cause": "string", "message": "string"}`;
-    const res = await callGeminiAI(prompt, true);
+    // Updated prompt for a specific report on user problems
+    const prompt = `Generate a Persian report about the user "${user.username}". They had ${user.count} recent issues: ${JSON.stringify(user.issues)}. 
+    Analyze:
+    1. What is the recurring technical theme?
+    2. Is the user at high risk of churn?
+    3. Actionable advice for the support team.
+    Format as a short paragraph.`;
+    
+    const res = await callGeminiAI(prompt, false);
     setAiLoading(false);
     if (res) {
-      try { const data = JSON.parse(res); alert(`🔥 سطح خطر: ${data.anger_score}/10\n🔍 علت: ${data.root_cause}\n💬 پیشنهاد: ${data.message}`); }
-      catch(e) { alert(res); }
+      alert(res);
     }
-  };
-
-  const handleSmartAnalysis = async () => {
-    if (!formData.desc_text) return alert('لطفاً شرح مشکل را وارد کنید.');
-    setAiLoading(true);
-    const res = await callGeminiAI(`Analyze issue in Persian: "${formData.desc_text}". Return JSON: { "module": "...", "type": "...", "note": "..." }`, true);
-    setAiLoading(false);
-    if (res) {
-      try { const parsed = JSON.parse(res); setFormData((prev) => ({ ...prev, module: parsed.module || '', type: parsed.type || '', technical_note: parsed.note || '' })); }
-      catch (e) { alert('خطا در تحلیل هوشمند.'); }
-    }
-  };
-
-  const handleRefundAI = async () => {
-    if (!formData.username && !formData.reason) return alert('اطلاعات ناقص است.');
-    setAiLoading(true);
-    const res = await callGeminiAI(`پیام محترمانه فارسی برای "${formData.username}" جهت بازگشت وجه به دلیل: "${formData.reason}"`, false);
-    setAiLoading(false);
-    if (res) setFormData((prev) => ({ ...prev, suggestion: res.trim() }));
   };
 
   const handleSave = async (e) => {
@@ -680,7 +827,8 @@ export default function App() {
             { id: 'frozen', label: 'اکانت فریز', icon: Snowflake },
             { id: 'features', label: 'درخواست فیچر', icon: Lightbulb },
             { id: 'refunds', label: 'بازگشت وجه', icon: CreditCard },
-            { id: 'profile', label: 'پروفایل کاربر', icon: User }
+            { id: 'profile', label: 'پروفایل کاربر', icon: User },
+            { id: 'ai-analysis', label: 'تحلیل هوشمند', icon: BrainCircuit }
           ].map((item) => (
             <button
               key={item.id}
@@ -755,7 +903,7 @@ export default function App() {
                 <div className="xl:col-span-1 bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-red-100 flex flex-col h-80">
                   <h4 className="font-bold text-gray-700 text-sm mb-4 flex items-center gap-2">
                     <span className="w-6 h-6 rounded-full bg-red-100 text-red-500 flex items-center justify-center"><AlertCircle size={14}/></span>
-                    ریسک ریزش کاربر
+                    ریسک ریزش کاربر (۳۰ روز اخیر)
                   </h4>
                   <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                     {churnRisks.length === 0 ? (
@@ -766,7 +914,7 @@ export default function App() {
                     ) : churnRisks.map((user, idx) => (
                       <div key={idx} className="bg-white border border-red-50 p-3 rounded-xl shadow-sm">
                         <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 cursor-pointer hover:opacity-70" onClick={() => navigateToProfile(user.username)}>
                             <UserAvatar name={user.username} size="sm"/>
                             <span className="font-bold text-sm text-gray-800">{user.username}</span>
                           </div>
@@ -774,7 +922,7 @@ export default function App() {
                         </div>
                         <button onClick={() => handleAiChurnAnalysis(user)} className="w-full flex items-center justify-center gap-1 text-[10px] text-purple-600 bg-purple-50 hover:bg-purple-600 hover:text-white border border-purple-100 px-3 py-1.5 rounded-lg transition">
                           {aiLoading ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
-                          تحلیل هوشمند
+                          گزارش مشکلات
                         </button>
                       </div>
                     ))}
@@ -824,7 +972,14 @@ export default function App() {
               features={features} 
               refunds={refunds} 
               openModal={openModal} 
+              profileSearch={profileSearch}
+              setProfileSearch={setProfileSearch}
             />
+          )}
+
+          {/* AI Analysis Tab */}
+          {activeTab === 'ai-analysis' && (
+            <AIAnalysisTab issues={issues} navigateToProfile={navigateToProfile} />
           )}
 
           {/* Data Tables Tab */}
@@ -863,7 +1018,7 @@ export default function App() {
                         <tr key={row.id} className={`hover:bg-blue-50/30 ${row.flag === 'پیگیری فوری' ? 'bg-red-50/50' : row.flag === 'پیگیری مهم' ? 'bg-amber-50/50' : ''}`}>
                           <td className="p-4 text-gray-500 text-xs whitespace-nowrap font-mono">{row.created_at || row.frozen_at || row.requested_at}</td>
                           <td className="p-4">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 cursor-pointer hover:opacity-70" onClick={() => navigateToProfile(row.username)}>
                               <UserAvatar name={row.username} size="sm" />
                               <span className="font-bold text-gray-700 text-sm">{row.username}</span>
                             </div>
@@ -949,7 +1104,7 @@ export default function App() {
                     <div className="space-y-1"><label className="text-xs text-gray-500 font-medium">وضعیت اشتراک</label><select value={formData.subscription_status || ''} onChange={(e) => setFormData({ ...formData, subscription_status: e.target.value })} className="w-full border p-3 rounded-xl text-xs bg-white outline-none"><option value="">انتخاب...</option><option value="Active">Active</option><option value="Paused">Paused</option><option value="Expired">Expired</option></select></div>
                     <div className="space-y-1"><label className="text-xs text-gray-500 font-medium">پشتیبان</label><input value={formData.support || ''} onChange={(e) => setFormData({ ...formData, support: e.target.value })} className="w-full border p-3 rounded-xl text-xs bg-white outline-none" /></div>
                   </div>
-                  <div className="relative space-y-1"><label className="text-xs text-gray-500 font-medium">شرح مشکل</label><textarea rows="3" value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl outline-none focus:border-blue-500 bg-white text-sm"></textarea><button type="button" onClick={handleSmartAnalysis} className="absolute bottom-3 left-3 bg-purple-50 hover:bg-purple-100 text-purple-700 text-[11px] px-3 py-1.5 rounded-lg flex gap-1 items-center border border-purple-100">{aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}تحلیل</button></div>
+                  <div className="relative space-y-1"><label className="text-xs text-gray-500 font-medium">شرح مشکل</label><textarea rows="3" value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl outline-none focus:border-blue-500 bg-white text-sm"></textarea></div>
                   <div className="space-y-1"><label className="text-xs text-gray-500 font-medium">یادداشت فنی</label><textarea rows="2" value={formData.technical_note || ''} onChange={(e) => setFormData({ ...formData, technical_note: e.target.value })} className="w-full border p-3 rounded-xl text-xs bg-white outline-none"></textarea></div>
                 </>
               )}
@@ -971,8 +1126,6 @@ export default function App() {
                 <div className="space-y-3">
                   <div className="space-y-1"><label className="text-xs text-gray-500 font-medium">وضعیت</label><select value={formData.action || 'در حال بررسی'} onChange={(e) => setFormData({...formData, action: e.target.value})} className="w-full border p-3 rounded-xl text-xs bg-white outline-none"><option value="در حال بررسی">در حال بررسی</option><option value="بازپرداخت شد">بازپرداخت شد</option><option value="رد شد">رد شد</option></select></div>
                   <textarea placeholder="دلیل..." rows="3" value={formData.reason || ''} onChange={(e) => setFormData({...formData, reason: e.target.value})} className="w-full border p-3 rounded-xl text-xs bg-white outline-none" />
-                  <button type="button" onClick={handleRefundAI} className="bg-purple-50 text-purple-600 text-[11px] w-full py-2.5 rounded-xl flex justify-center gap-1 items-center border border-purple-100 hover:bg-purple-100"><Sparkles size={14} /> پیشنهاد متن</button>
-                  {formData.suggestion && <div className="text-[11px] bg-purple-50 p-3 rounded-xl border border-purple-100 text-purple-800">{formData.suggestion}</div>}
                 </div>
               )}
               
