@@ -66,9 +66,9 @@ const INITIAL_FORM_DATA = {
   technical_note: '', cause: '', first_frozen_at: '', freeze_count: '',
   last_frozen_at: '', resolve_status: '', note: '', title: '', category: '',
   repeat_count: '', importance: '', internal_note: '', reason: '', duration: '',
-  action: '', suggestion: '', can_return: '', sales_source: '', ops_note: '', flag: '',
+  action: '', suggestion: '', can_return: '', sales_source: '', ops_note: '', flag: '', date: '',
   // Onboarding specific
-  has_website: false, progress: 0, initial_call_status: '', conversation_summary: '', meeting_date: '', meeting_note: '', followup_date: '', followup_note: ''
+  has_website: false, progress: 0, initial_call_status: '', conversation_summary: '', call_date: '', meeting_date: '', meeting_note: '', followup_date: '', followup_note: ''
 };
 
 const useTailwind = () => {
@@ -308,7 +308,7 @@ const KanbanBoard = ({ items, onStatusChange, columns, navigateToProfile, openMo
                             <p className="text-xs text-gray-600 mb-3 line-clamp-3">{item.desc_text || item.title}</p>
                             <div className="flex justify-between items-center text-[10px] text-gray-400">
                               <span className="font-mono">{formatDate(item.created_at)}</span>
-                              {item.flag && <span className={`px-1.5 py-0.5 rounded font-bold ${item.flag === 'پیگیری فوری' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>{item.flag}</span>}
+                              {item.flag && <span className={`px-1.5 py-0.5 rounded font-bold border ${item.flag === 'پیگیری فوری' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>{item.flag}</span>}
                             </div>
                             {item.last_updated_by && (
                               <div className="mt-2 pt-2 border-t flex gap-1 items-center text-[9px] text-gray-400">
@@ -499,7 +499,12 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
     return (
         <div className="w-full max-w-5xl mx-auto space-y-6">
             <div className="bg-white/80 backdrop-blur-md p-6 rounded-3xl shadow-sm border border-white relative z-20">
-                <h2 className="font-bold text-gray-800 mb-3 flex items-center gap-2"><User size={20} className="text-blue-600"/> پروفایل کاربر</h2>
+                <div className="flex justify-between items-center mb-3">
+                    <h2 className="font-bold text-gray-800 flex items-center gap-2"><User size={20} className="text-blue-600"/> پروفایل کاربر</h2>
+                    <button onClick={() => openModal('profile')} className="bg-blue-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-lg shadow-blue-200 flex items-center gap-1 hover:bg-blue-700 transition">
+                        <Plus size={14}/> پروفایل جدید
+                    </button>
+                </div>
                 <div className="relative">
                     <div className="flex items-center border border-gray-200 rounded-2xl bg-gray-50/50 overflow-hidden focus-within:ring-2 ring-blue-100 transition-all">
                         <div className="pl-3 pr-4 text-gray-400"><Search size={18} /></div>
@@ -825,14 +830,17 @@ export default function App() {
   }, [issues, frozen, refunds]);
 
   const churnRisks = useMemo(() => {
-    // Filter issues from last 30 days
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     
     const recentIssues = issues.filter(i => {
         if (!i.created_at) return false;
-        const d = i.created_at.includes('T') ? new Date(i.created_at) : new Date(i.created_at); // Simple parse
-        return d >= thirtyDaysAgo;
+        try {
+            if (i.created_at.includes('T')) {
+                return new Date(i.created_at) >= thirtyDaysAgo;
+            }
+            return false;
+        } catch (e) { return false; }
     });
 
     const userCounts = {};
@@ -871,9 +879,7 @@ export default function App() {
     e.preventDefault();
     const isEdit = !!editingId;
     // Save ISO string for new items to enable SLA logic
-    const createdTimestamp = new Date().toISOString(); 
-    // Fallback date string for legacy compatibility (optional, but code uses created_at for display)
-    // We will save createdTimestamp into created_at column. Display logic will handle it.
+    const createdTimestamp = formData.date ? new Date(formData.date).toISOString() : new Date().toISOString(); 
     
     let table = '';
     const commonFields = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, flag: formData.flag || null };
@@ -917,6 +923,7 @@ export default function App() {
         progress: Number(formData.progress),
         initial_call_status: formData.initial_call_status,
         conversation_summary: formData.conversation_summary,
+        call_date: formData.call_date,
         meeting_date: formData.meeting_date,
         meeting_note: formData.meeting_note,
         followup_date: formData.followup_date,
@@ -1038,6 +1045,9 @@ export default function App() {
               <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 bg-white border rounded-xl shadow-sm text-gray-600"><Menu size={20} /></button>
               <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">داشبورد پشتیبانی</h1>
             </div>
+            <div className="text-xs text-slate-500 bg-white/60 px-3 py-1.5 rounded-full border">
+              امروز {new Date().toLocaleDateString('fa-IR', { weekday: 'long', month: '2-digit', day: '2-digit' })}
+            </div>
           </header>
 
           {activeTab === 'dashboard' && (
@@ -1092,8 +1102,17 @@ export default function App() {
                 {/* Analytics Charts */}
                 <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 h-80">
                    <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col">
-                      <h4 className="font-bold text-gray-700 text-sm mb-4">پراکندگی زمانی مشکلات (Heatmap)</h4>
-                      <div className="flex-1 w-full"><HeatmapChart issues={issues} /></div>
+                      <h4 className="font-bold text-gray-700 text-sm mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-blue-500"/>روند ثبت مشکلات</h4>
+                      <div className="flex-1 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={chartData}>
+                            <defs><linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
+                            <XAxis dataKey="date" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
+                            <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: '11px'}} />
+                            <Area type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={2} fill="url(#colorCount)" />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
                    </div>
                    <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col">
                       <h4 className="font-bold text-gray-700 text-sm mb-4">نرخ فعال‌سازی کاربران (Cohort)</h4>
@@ -1134,7 +1153,7 @@ export default function App() {
                     <thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">تاریخ</th><th className="p-4"></th></tr></thead>
                     <tbody>
                       {issues.map(row => (
-                        <tr key={row.id} className="border-b last:border-0 hover:bg-slate-50">
+                        <tr key={row.id} className={`border-b last:border-0 hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200' : ''}`}>
                           <td className="p-4 font-bold cursor-pointer hover:text-blue-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td>
                           <td className="p-4 truncate max-w-xs">{row.desc_text}</td>
                           <td className="p-4"><span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-600 text-xs border border-blue-100">{row.status}</span></td>
@@ -1175,7 +1194,7 @@ export default function App() {
                     <thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">عنوان</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4"></th></tr></thead>
                     <tbody>
                       {features.map(row => (
-                        <tr key={row.id} className="border-b last:border-0 hover:bg-slate-50">
+                        <tr key={row.id} className={`border-b last:border-0 hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200' : ''}`}>
                           <td className="p-4 font-bold cursor-pointer hover:text-purple-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td>
                           <td className="p-4 font-bold">{row.title}</td>
                           <td className="p-4 truncate max-w-xs">{row.desc_text}</td>
@@ -1218,7 +1237,7 @@ export default function App() {
                     <thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4"></th></tr></thead>
                     <tbody>
                         {(activeTab === 'frozen' ? frozen : refunds).map(row => (
-                            <tr key={row.id} className="border-b hover:bg-slate-50">
+                            <tr key={row.id} className={`border-b hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200' : ''}`}>
                                 <td className="p-4 font-bold cursor-pointer hover:text-blue-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td>
                                 <td className="p-4">{row.desc_text || row.reason}</td>
                                 <td className="p-4">{row.status || row.action}</td>
@@ -1245,27 +1264,45 @@ export default function App() {
             <form onSubmit={handleSave} className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
                 {/* Onboarding Specific Fields */}
                 {modalType === 'onboarding' ? (
-                    <>
+                    <div className="space-y-4">
                         <UserSearchInput 
                             value={formData.username} 
                             onChange={(val) => setFormData(p => ({ ...p, username: val }))} 
                             onSelect={(u) => setFormData(p => ({ ...p, username: u.username, phone_number: u.phone_number || '' }))}
                             allUsers={allUsers} 
                         />
+                        
                         <div className="space-y-1">
                             <label className="text-xs font-bold text-gray-500">درصد پیشرفت ({formData.progress}%)</label>
                             <input type="range" min="0" max="100" step="5" value={formData.progress || 0} onChange={(e) => setFormData({...formData, progress: e.target.value})} className="w-full accent-indigo-600 cursor-pointer"/>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <select value={formData.initial_call_status || ''} onChange={(e) => setFormData({...formData, initial_call_status: e.target.value})} className="border p-3 rounded-xl text-sm w-full"><option value="">وضعیت تماس اولیه...</option><option value="پاسخ داد">پاسخ داد</option><option value="پاسخ نداد">پاسخ نداد</option><option value="رد تماس">رد تماس</option></select>
-                            <select value={formData.has_website || 'false'} onChange={(e) => setFormData({...formData, has_website: e.target.value})} className="border p-3 rounded-xl text-sm w-full"><option value="false">وبسایت ندارد</option><option value="true">وبسایت دارد</option></select>
+
+                        <select value={formData.has_website || 'false'} onChange={(e) => setFormData({...formData, has_website: e.target.value})} className="border p-3 rounded-xl text-sm w-full"><option value="false">وبسایت ندارد</option><option value="true">وبسایت دارد</option></select>
+
+                        {/* Section 1: Call */}
+                        <div className="bg-slate-50 p-3 rounded-xl space-y-2 border">
+                            <h4 className="font-bold text-gray-700 text-xs">۱. تماس اولیه</h4>
+                            <div className="grid grid-cols-2 gap-2">
+                                <select value={formData.initial_call_status || ''} onChange={(e) => setFormData({...formData, initial_call_status: e.target.value})} className="border p-2 rounded-lg text-xs w-full"><option value="">وضعیت...</option><option value="پاسخ داد">پاسخ داد</option><option value="پاسخ نداد">پاسخ نداد</option><option value="رد تماس">رد تماس</option></select>
+                                <input type="text" placeholder="تاریخ (۱۴۰۳/...)" value={formData.call_date || ''} onChange={(e) => setFormData({...formData, call_date: e.target.value})} className="border p-2 rounded-lg text-xs"/>
+                            </div>
+                            <textarea placeholder="خلاصه مکالمه..." rows="2" value={formData.conversation_summary || ''} onChange={(e) => setFormData({...formData, conversation_summary: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/>
                         </div>
-                        <textarea placeholder="خلاصه مکالمه..." rows="3" value={formData.conversation_summary || ''} onChange={(e) => setFormData({...formData, conversation_summary: e.target.value})} className="w-full border p-3 rounded-xl text-sm"/>
-                        <div className="grid grid-cols-2 gap-3">
-                            <input type="text" placeholder="تاریخ جلسه (۱۴۰۲/...)" value={formData.meeting_date || ''} onChange={(e) => setFormData({...formData, meeting_date: e.target.value})} className="border p-3 rounded-xl text-sm"/>
-                            <input type="text" placeholder="تاریخ فالوآپ" value={formData.followup_date || ''} onChange={(e) => setFormData({...formData, followup_date: e.target.value})} className="border p-3 rounded-xl text-sm"/>
+
+                        {/* Section 2: Meeting */}
+                        <div className="bg-slate-50 p-3 rounded-xl space-y-2 border">
+                            <h4 className="font-bold text-gray-700 text-xs">۲. جلسه آنلاین</h4>
+                            <input type="text" placeholder="تاریخ جلسه" value={formData.meeting_date || ''} onChange={(e) => setFormData({...formData, meeting_date: e.target.value})} className="border p-2 rounded-lg text-xs w-full"/>
+                            <textarea placeholder="توضیحات جلسه..." rows="2" value={formData.meeting_note || ''} onChange={(e) => setFormData({...formData, meeting_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/>
                         </div>
-                    </>
+
+                        {/* Section 3: Followup */}
+                        <div className="bg-slate-50 p-3 rounded-xl space-y-2 border">
+                            <h4 className="font-bold text-gray-700 text-xs">۳. پیگیری بعدی</h4>
+                            <input type="text" placeholder="تاریخ فالوآپ" value={formData.followup_date || ''} onChange={(e) => setFormData({...formData, followup_date: e.target.value})} className="border p-2 rounded-lg text-xs w-full"/>
+                            <textarea placeholder="توضیحات پیگیری..." rows="2" value={formData.followup_note || ''} onChange={(e) => setFormData({...formData, followup_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/>
+                        </div>
+                    </div>
                 ) : (
                     /* Default Fields for other types */
                     <>
@@ -1278,11 +1315,27 @@ export default function App() {
                                 allUsers={allUsers}
                             />
                         </div>
+                        
+                        {/* Date field for reports (not profile, not onboarding) */}
+                        {modalType !== 'profile' && (
+                             <div className="space-y-1"><label className="text-xs text-gray-500 font-medium">تاریخ ثبت</label><input type="date" value={formData.date || ''} onChange={(e) => setFormData({...formData, date: e.target.value})} className="w-full border p-3 rounded-xl text-sm" /></div>
+                        )}
+
                         {/* Common inputs */}
                         <div className="grid grid-cols-2 gap-3">
                             <input placeholder="شماره تماس" value={formData.phone_number || ''} onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })} className="border p-3 rounded-xl text-sm w-full" />
                             <input placeholder="اینستاگرام" value={formData.instagram_username || ''} onChange={(e) => setFormData({ ...formData, instagram_username: e.target.value })} className="border p-3 rounded-xl text-sm w-full" />
                         </div>
+
+                        {modalType === 'profile' && (
+                            <>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <input placeholder="آیدی تلگرام" value={formData.telegram_id || ''} onChange={(e) => setFormData({...formData, telegram_id: e.target.value})} className="border p-3 rounded-xl text-sm w-full" />
+                                    <input placeholder="وبسایت" value={formData.website || ''} onChange={(e) => setFormData({...formData, website: e.target.value})} className="border p-3 rounded-xl text-sm w-full" />
+                                </div>
+                                <textarea placeholder="بیوگرافی..." rows="3" value={formData.bio || ''} onChange={(e) => setFormData({...formData, bio: e.target.value})} className="w-full border p-3 rounded-xl text-sm" />
+                            </>
+                        )}
                         
                         {/* Issue Specific */}
                         {modalType === 'issue' && (
