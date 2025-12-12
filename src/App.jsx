@@ -56,16 +56,15 @@ import {
   CartesianGrid
 } from 'recharts';
 
-// --- Configuration & Secrets ---
+// --- تنظیمات اتصال ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
 
-// --- Vardast AI Config ---
+// --- تنظیمات API وردست (جایگزین شده) ---
 const VARDAST_API_KEY = 'DVmo0Hi2NHQE3kLx-Q7V3NWZBophr_kKDlTXrj7bdtQ';
-const VARDAST_CHANNEL_ID = 'a5211d3f-f59a-4a0e-b604-dabef603810c';
-// A mock UUID for admin usage since API requires a contact_id
-const ADMIN_CONTACT_ID = '00000000-0000-0000-0000-000000000001'; 
+const VARDAST_CHANNEL_ID = '78e1016c-493c-4601-9f26-88974c277b3d';
+const VARDAST_BASE_URL = 'https://apigw.vardast.chat/uaa/public';
 
 const INITIAL_FORM_DATA = {
   username: '', phone_number: '', instagram_username: '', telegram_id: '', website: '', bio: '', 
@@ -126,7 +125,6 @@ try {
 // --- Helpers ---
 const formatDate = (dateStr) => {
   if (!dateStr) return '-';
-  // Check if ISO string (contains T)
   if (dateStr.includes('T')) {
     try {
       return new Date(dateStr).toLocaleDateString('fa-IR');
@@ -134,13 +132,12 @@ const formatDate = (dateStr) => {
       return dateStr;
     }
   }
-  return dateStr; // Assume already Persian
+  return dateStr; 
 };
 
 const checkSLA = (item) => {
-  if (!item.created_at || !item.created_at.includes('T')) return false; // Only check items with ISO timestamp
+  if (!item.created_at || !item.created_at.includes('T')) return false; 
   if (item.flag !== 'پیگیری فوری') return false;
-  // Map various "Open" statuses
   const openStatuses = ['باز', 'بررسی نشده'];
   if (!openStatuses.includes(item.status)) return false;
 
@@ -167,40 +164,63 @@ const parsePersianDate = (dateStr) => {
   return null;
 };
 
-// --- VARDAST AI FUNCTION ---
-const callVardastAI = async (prompt, isJson = false) => {
-  try {
-    const response = await fetch('https://apigw.vardast.chat/uaa/public/messenger/api/chat/public/process', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': VARDAST_API_KEY
-      },
-      body: JSON.stringify({
-        message: prompt,
-        channel_id: VARDAST_CHANNEL_ID,
-        contact_id: ADMIN_CONTACT_ID,
-        assistant_id: null // Optional, defaults to channel's assistant
-      })
+// --- تابع جدید اتصال به هوش مصنوعی وردست ---
+
+// تولید شناسه یکتا برای ادمین جهت حفظ تاریخچه چت در سرور وردست
+const generateUUID = () => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
     });
+};
+
+const ADMIN_CONTACT_ID = localStorage.getItem('vardast_admin_id') || generateUUID();
+if (!localStorage.getItem('vardast_admin_id')) localStorage.setItem('vardast_admin_id', ADMIN_CONTACT_ID);
+
+const callAI = async (prompt, isJson = false) => {
+  if (!VARDAST_API_KEY) return alert('کلید API وردست وارد نشده است.');
+  
+  try {
+    let finalPrompt = prompt;
+    // اگر فرمت جیسون نیاز است، صریحا درخواست می‌کنیم
+    if (isJson) {
+        finalPrompt += "\n\n(لطفا خروجی را فقط و فقط به صورت یک آبجکت JSON معتبر برگردان. هیچ متن اضافه، Markdown یا توضیحی ننویس.)";
+    }
+
+    const response = await fetch(
+      `${VARDAST_BASE_URL}/messenger/api/chat/public/process`,
+      {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'X-API-Key': VARDAST_API_KEY
+        },
+        body: JSON.stringify({
+          message: finalPrompt,
+          channel_id: VARDAST_CHANNEL_ID,
+          contact_id: ADMIN_CONTACT_ID,
+          assistant_id: null 
+        }),
+      }
+    );
 
     const data = await response.json();
 
-    if (data.status === 'success' && data.response) {
-      let resultText = data.response;
-      
-      // Clean up Markdown code blocks if JSON is expected to prevent parse errors
-      if (isJson) {
-        resultText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
-      }
-      
-      return resultText;
-    } else {
-      console.error('Vardast AI Error:', data.error || 'Unknown error');
-      return null;
+    if (data.status === 'error') {
+        console.error('Vardast AI Error:', data.error);
+        return null;
     }
+
+    let text = data.response;
+
+    // تمیزکاری کد بلاک‌های مارک‌داون اگر جیسون درخواست شده بود
+    if (isJson && text) {
+       text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    }
+
+    return text;
   } catch (error) {
-    console.error('Network Error:', error);
+    console.error('AI Network Error:', error);
     return null;
   }
 };
@@ -381,7 +401,7 @@ const OnboardingTab = ({ onboardings, openModal, navigateToProfile }) => {
           <Plus size={16} /> ثبت کاربر جدید
         </button>
       </div>
-      
+       
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {onboardings.map((item) => (
           <div key={item.id} className="bg-white rounded-2xl p-5 shadow-sm border border-indigo-50 hover:shadow-md transition relative overflow-hidden">
@@ -688,10 +708,11 @@ const AIAnalysisTab = ({ issues, onboardings, navigateToProfile }) => {
     const [aiResult, setAiResult] = useState('');
     const [loading, setLoading] = useState(false);
 
+    // --- Updated function calls to callAI ---
     const handleOnboardingAnalysis = async () => {
         setLoading(true);
         const prompt = `تحلیل روند آنبوردینگ کاربران: ${JSON.stringify(onboardings.slice(0, 30).map(u => ({ progress: u.progress, note: u.meeting_note || u.followup_note })))}. لطفا موانع اصلی پیشرفت و پیشنهادات برای افزایش نرخ تکمیل پروفایل را بگو.`;
-        const res = await callVardastAI(prompt);
+        const res = await callAI(prompt);
         setAiResult(res || 'خطا در ارتباط با هوش مصنوعی');
         setLoading(false);
     };
@@ -699,7 +720,7 @@ const AIAnalysisTab = ({ issues, onboardings, navigateToProfile }) => {
     const handleGeneralAnalysis = async () => {
         setLoading(true);
         const prompt = `تحلیل کلی مشکلات اخیر: ${JSON.stringify(issues.slice(0, 50).map(i => ({ type: i.type, desc: i.desc_text })))}. لطفا مهمترین الگوها و پیشنهادات بهبود را بگو.`;
-        const res = await callVardastAI(prompt);
+        const res = await callAI(prompt);
         setAiResult(res || 'خطا در ارتباط با هوش مصنوعی');
         setLoading(false);
     };
@@ -708,7 +729,7 @@ const AIAnalysisTab = ({ issues, onboardings, navigateToProfile }) => {
         if (!aiQuery) return;
         setLoading(true);
         const prompt = `در بین این مشکلات، کدام‌ها به "${aiQuery}" مربوط می‌شوند؟ لیست کن: ${JSON.stringify(issues.slice(0, 50).map(i => ({ id: i.id, username: i.username, desc: i.desc_text })))}`;
-        const res = await callVardastAI(prompt);
+        const res = await callAI(prompt);
         setAiResult(res || 'خطا در ارتباط با هوش مصنوعی');
         setLoading(false);
     };
@@ -899,11 +920,20 @@ export default function App() {
     3. root_cause: علت اصلی.
     4. message: پیام پیشنهادی برای دلجویی.
     به وضعیت حل شدن یا نشدن مشکلات توجه کن.`;
-    const res = await callVardastAI(prompt, true);
+    
+    // --- Updated to use callAI ---
+    const res = await callAI(prompt, true);
+    
     setAiLoading(false);
     if (res) {
-      try { const data = JSON.parse(res); alert(`🔥 خطر ریزش: ${data.anger_score}/10\n📝 خلاصه: ${data.summary}\n🔍 علت: ${data.root_cause}\n💬 پیشنهاد: ${data.message}`); }
-      catch(e) { alert(res); }
+      try { 
+          const data = JSON.parse(res); 
+          alert(`🔥 خطر ریزش: ${data.anger_score}/10\n📝 خلاصه: ${data.summary}\n🔍 علت: ${data.root_cause}\n💬 پیشنهاد: ${data.message}`); 
+      }
+      catch(e) { 
+          console.error(e);
+          alert('خروجی هوش مصنوعی فرمت JSON صحیح نداشت:\n' + res); 
+      }
     }
   };
 
@@ -1143,7 +1173,7 @@ export default function App() {
 
                 {/* Analytics Charts */}
                 <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 h-80">
-                    <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col">
+                   <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col">
                       <h4 className="font-bold text-gray-700 text-sm mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-blue-500"/>روند ثبت مشکلات</h4>
                       <div className="flex-1 w-full">
                         <ResponsiveContainer width="100%" height="100%">
@@ -1155,11 +1185,11 @@ export default function App() {
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
-                    </div>
-                    <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col">
+                   </div>
+                   <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col">
                       <h4 className="font-bold text-gray-700 text-sm mb-4">نرخ فعال‌سازی کاربران (Cohort)</h4>
                       <div className="flex-1 w-full"><CohortChart onboardings={onboardings} /></div>
-                    </div>
+                   </div>
                 </div>
               </div>
             </section>
