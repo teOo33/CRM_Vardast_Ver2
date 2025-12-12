@@ -56,11 +56,11 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
 
 // --- تنظیمات وردست (Vardast) ---
-const VARDAST_API_KEY = "a5211d3f-f59a-4a0e-b604-dabef603810c";
-const VARDAST_CHANNEL_ID = "a5211d3f-f59a-4a0e-b604-dabef603810c"; // شناسه کانالی که ساختید
+const VARDAST_API_KEY = "DVmo0Hi2NHQE3kLx-Q7V3NWZBophr_kKDlTXrj7bdtQ";
 const VARDAST_BASE_URL = "https://apigw.vardast.chat/uaa/public";
 
-// متغیر کش برای شناسه مخاطب
+// متغیرهای کش برای جلوگیری از درخواست‌های تکراری
+let cachedChannelId = null;
 let cachedContactId = null;
 
 const INITIAL_FORM_DATA = {
@@ -159,9 +159,9 @@ const parsePersianDate = (dateStr) => {
   return null;
 };
 
-// --- Vardast Logic (Simplified for Web Channel) ---
+// --- Vardast Logic (Corrected & Automated) ---
 
-// تولید شناسه یکتا برای مرورگر (ادمین)
+// ۱. تولید یا دریافت شناسه ادمین داشبورد (برای حل خطای Contact not found)
 const getDashboardContactId = () => {
   let savedId = localStorage.getItem('vardast_dashboard_contact_id');
   if (!savedId) {
@@ -171,20 +171,63 @@ const getDashboardContactId = () => {
       return v.toString(16);
     });
     localStorage.setItem('vardast_dashboard_contact_id', savedId);
-    console.log("🆕 New Admin Contact ID:", savedId);
+    console.log("New Dashboard Admin ID Generated:", savedId);
   }
   return savedId;
 };
 
+// ۲. یافتن شناسه کانال واقعی (برای حل خطای Channel ID نامعتبر)
+const fetchRealChannelId = async () => {
+  try {
+    const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/channel/`, {
+      method: 'GET',
+      headers: { 
+        'X-API-Key': VARDAST_API_KEY, 
+        'Content-Type': 'application/json' 
+      }
+    });
+    const data = await response.json();
+    
+    // اگر کانالی پیدا شد، آیدی کانال وب را برگردان
+    if (data.items && data.items.length > 0) {
+      // اولویت با کانال وب است
+      const webChannel = data.items.find(c => c.platform === 'WEB' || c.platform === 'WIDGET');
+      if(webChannel) {
+          console.log("✅ Web Channel Found:", webChannel.name);
+          return webChannel.id;
+      }
+      
+      console.log("⚠️ No Web channel found, trying first available:", data.items[0].name);
+      return data.items[0].id;
+    } else {
+      console.error("❌ No channels found in this account.");
+      return null;
+    }
+  } catch (error) {
+    console.error("❌ Error fetching channels:", error);
+    return null;
+  }
+};
+
+// ۳. تابع اصلی فراخوانی هوش مصنوعی
 const callVardastAI = async (prompt, isJson = false) => {
-  if (!VARDAST_API_KEY) return alert('کلید API وردست تنظیم نشده است.');
+  if (!VARDAST_API_KEY) return alert('کلید API وردست وارد نشده است.');
   
   try {
-    // دریافت آیدی مخاطب (از حافظه مرورگر)
+    // الف: پیدا کردن کانال (فقط بار اول)
+    if (!cachedChannelId) {
+      cachedChannelId = await fetchRealChannelId();
+      if (!cachedChannelId) {
+        return "خطا: هیچ کانالی در حساب وردست شما یافت نشد. لطفا در پنل وردست یک کانال وب بسازید.";
+      }
+    }
+
+    // ب: گرفتن آیدی ادمین
     if (!cachedContactId) {
       cachedContactId = getDashboardContactId();
     }
 
+    // ج: ارسال پیام
     const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/chat/public/process`, {
       method: 'POST',
       headers: { 
@@ -193,15 +236,16 @@ const callVardastAI = async (prompt, isJson = false) => {
       },
       body: JSON.stringify({
         message: prompt,
-        channel_id: VARDAST_CHANNEL_ID,
-        contact_id: cachedContactId, // آیدی تولید شده برای کانال وب
-        assistant_id: null // استفاده از دستیار پیش‌فرض کانال (CRM)
+        channel_id: cachedChannelId,
+        contact_id: cachedContactId,
+        assistant_id: null 
       }),
     });
 
+    // د: مدیریت خطاهای خاص
     if (response.status === 422) {
-       console.error("Vardast 422 Error. Check Channel ID.");
-       return "خطای ۴۲۲: شناسه کانال نامعتبر است یا کانال از نوع وب نیست.";
+       console.error("Vardast 422 Error. Please check channel permissions.");
+       return "خطای ۴۲۲: کانال انتخاب شده اجازه چت با کاربر وب را نمی‌دهد. مطمئن شوید کانال از نوع وب است.";
     }
 
     const data = await response.json();
@@ -209,12 +253,13 @@ const callVardastAI = async (prompt, isJson = false) => {
     if (data.status === 'success' && data.response) {
       let resultText = data.response;
       if (isJson) {
+        // تمیزکاری خروجی اگر JSON خواستیم
         resultText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
       }
       return resultText;
     } else {
       console.error('Vardast Error:', data);
-      return `خطا: ${data.error || 'Unknown error'}`;
+      return `خطا در دریافت پاسخ: ${data.error || 'Unknown'}`;
     }
 
   } catch (error) {
