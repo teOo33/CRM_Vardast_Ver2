@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format, differenceInHours, parseISO } from 'date-fns';
+import jalaali from 'jalaali-js';
 
 import {
   LayoutDashboard,
@@ -140,6 +141,24 @@ const checkSLA = (item) => {
   const created = new Date(item.created_at);
   const diff = differenceInHours(new Date(), created);
   return diff >= 2;
+};
+
+const parsePersianDate = (dateStr) => {
+  if (!dateStr) return null;
+  if (dateStr.includes('T')) return new Date(dateStr);
+  const parts = dateStr.split('/');
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    const d = parseInt(parts[2], 10);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      try {
+        const g = jalaali.toGregorian(y, m, d);
+        return new Date(g.gy, g.gm - 1, g.gd);
+      } catch (e) { return null; }
+    }
+  }
+  return null;
 };
 
 const callGeminiAI = async (prompt, isJson = false) => {
@@ -835,32 +854,33 @@ export default function App() {
     
     const recentIssues = issues.filter(i => {
         if (!i.created_at) return false;
-        try {
-            if (i.created_at.includes('T')) {
-                return new Date(i.created_at) >= thirtyDaysAgo;
-            }
-            return false;
-        } catch (e) { return false; }
+        const date = parsePersianDate(i.created_at);
+        return date && date >= thirtyDaysAgo;
     });
 
     const userCounts = {};
     recentIssues.forEach(i => {
       if (!userCounts[i.username]) userCounts[i.username] = { count: 0, issues: [] };
       userCounts[i.username].count += 1;
-      userCounts[i.username].issues.push(i.desc_text);
+      userCounts[i.username].issues.push({ desc: i.desc_text, status: i.status });
     });
     return Object.entries(userCounts)
-        .filter(([_, data]) => data.count >= 3)
+        .filter(([_, data]) => data.count > 3)
         .map(([username, data]) => ({ username, count: data.count, issues: data.issues }));
   }, [issues]);
 
   const handleAiChurnAnalysis = async (user) => {
     setAiLoading(true);
-    const prompt = `کاربری با نام ${user.username} اخیرا ${user.count} بار مشکل داشته است. شرح مشکلات او: ${JSON.stringify(user.issues)}. لطفا تحلیل کن: 1. سطح عصبانیت احتمالی (1 تا 10). 2. ریشه اصلی مشکل (کوتاه). 3. یک پیام کوتاه و همدلانه برای دلجویی که پشتیبان به او بگوید. خروجی فقط JSON باشد: {"anger_score": number, "root_cause": "string", "message": "string"}`;
+    const prompt = `تحلیل خطر ریزش کاربر ${user.username} با ${user.count} گزارش در ۳۰ روز اخیر. لیست مشکلات: ${JSON.stringify(user.issues)}. لطفا خروجی JSON بده شامل: 
+    1. summary: خلاصه مشکلات کاربر.
+    2. anger_score: نمره خطر ریزش (۱ تا ۱۰).
+    3. root_cause: علت اصلی.
+    4. message: پیام پیشنهادی برای دلجویی.
+    به وضعیت حل شدن یا نشدن مشکلات توجه کن.`;
     const res = await callGeminiAI(prompt, true);
     setAiLoading(false);
     if (res) {
-      try { const data = JSON.parse(res); alert(`🔥 سطح خطر: ${data.anger_score}/10\n🔍 علت: ${data.root_cause}\n💬 پیشنهاد: ${data.message}`); }
+      try { const data = JSON.parse(res); alert(`🔥 خطر ریزش: ${data.anger_score}/10\n📝 خلاصه: ${data.summary}\n🔍 علت: ${data.root_cause}\n💬 پیشنهاد: ${data.message}`); }
       catch(e) { alert(res); }
     }
   };
@@ -1046,7 +1066,7 @@ export default function App() {
               <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">داشبورد پشتیبانی</h1>
             </div>
             <div className="text-xs text-slate-500 bg-white/60 px-3 py-1.5 rounded-full border">
-              امروز {new Date().toLocaleDateString('fa-IR', { weekday: 'long', month: '2-digit', day: '2-digit' })}
+              امروز {new Date().toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })} - {new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
             </div>
           </header>
 
