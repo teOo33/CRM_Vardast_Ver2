@@ -159,45 +159,39 @@ const parsePersianDate = (dateStr) => {
   return null;
 };
 
-// --- Vardast Logic (Corrected) ---
+// --- Vardast Logic (Fixed for Internal Dashboard) ---
 
-// تابع کمکی برای یافتن شناسه مخاطب واقعی
-const getRealContactId = async () => {
-  try {
-    const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/chat/contacts/?channel_ids=${VARDAST_CHANNEL_ID}&size=1`, {
-      method: 'GET',
-      headers: { 
-        'X-API-Key': VARDAST_API_KEY, 
-        'Content-Type': 'application/json' 
-      }
-    });
-    
-    const data = await response.json();
-    
-    if (data.items && data.items.length > 0) {
-      console.log("Real Contact Found:", data.items[0].id);
-      return data.items[0].id;
-    } else {
-      console.error("No contacts found. Please message your bot first.");
-      return null;
-    }
-  } catch (error) {
-    console.error("Error fetching contacts:", error);
-    return null;
+// تابع تولید UUID تصادفی برای ساخت هویت ادمین داشبورد
+const generateUUID = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
+// تابع دریافت یا ساخت شناسه تماس برای داشبورد
+const getDashboardContactId = () => {
+  // ۱. اول چک میکنیم آیا قبلا آیدی ساختیم و در مرورگر ذخیره کردیم؟
+  let savedId = localStorage.getItem('vardast_dashboard_contact_id');
+  
+  // ۲. اگر نبود، یکی میسازیم و ذخیره میکنیم (این میشه هویت ثابت این داشبورد)
+  if (!savedId) {
+    savedId = generateUUID();
+    localStorage.setItem('vardast_dashboard_contact_id', savedId);
+    console.log("New Dashboard Admin ID Generated:", savedId);
+  } else {
+    console.log("Using Existing Dashboard ID:", savedId);
   }
+  
+  return savedId;
 };
 
 const callVardastAI = async (prompt, isJson = false) => {
   if (!VARDAST_API_KEY) return alert('کلید API وردست وارد نشده است.');
   
   try {
-    // اگر آیدی مخاطب نداریم، پیدایش کن
-    if (!cachedContactId) {
-      cachedContactId = await getRealContactId();
-      if (!cachedContactId) {
-        return "خطا: هیچ مخاطبی یافت نشد. لطفاً در پلتفرم متصل شده (تلگرام/اینستاگرام) یک پیام به بات بفرستید.";
-      }
-    }
+    // دریافت آیدی ثابت ادمین (دیگر نیازی به فچ کردن از سرور نیست)
+    const contactId = getDashboardContactId();
 
     const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/chat/public/process`, {
       method: 'POST',
@@ -208,15 +202,14 @@ const callVardastAI = async (prompt, isJson = false) => {
       body: JSON.stringify({
         message: prompt,
         channel_id: VARDAST_CHANNEL_ID,
-        contact_id: cachedContactId,
+        contact_id: contactId, // ارسال آیدی تولید شده توسط خودمان
         assistant_id: null 
       }),
     });
 
     if (response.status === 422) {
-       console.error("Vardast 422 Error: Invalid Contact ID.");
-       cachedContactId = null; // Reset cache
-       return "خطای اعتبارسنجی (422). لطفا دوباره تلاش کنید.";
+       console.error("Vardast 422 Error. Checking params:", { VARDAST_CHANNEL_ID, contactId });
+       return "خطای 422: کانال یافت نشد یا فرمت آیدی نامعتبر است. لطفا Channel ID را چک کنید.";
     }
 
     const data = await response.json();
