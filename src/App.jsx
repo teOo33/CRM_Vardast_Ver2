@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { format, differenceInHours, parseISO, subDays, subYears, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
+import { format, differenceInHours, differenceInDays, parseISO, subDays, subYears, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 import jalaali from 'jalaali-js';
 import DatePicker, { DateObject } from "react-multi-date-picker";
 import persian from "react-date-object/calendars/persian";
@@ -42,7 +42,12 @@ import {
   UserCheck,
   Calendar,
   Filter,
-  Maximize2
+  Maximize2,
+  Bell,
+  Mic,
+  MicOff,
+  CheckSquare,
+  Wrench
 } from 'lucide-react';
 
 import {
@@ -80,6 +85,7 @@ const INITIAL_FORM_DATA = {
   last_frozen_at: '', resolve_status: '', note: '', title: '', category: '',
   repeat_count: '', importance: '', internal_note: '', reason: '', duration: '',
   action: '', suggestion: '', can_return: '', sales_source: '', ops_note: '', flag: '', date: '',
+  technical_review: false,
   // Onboarding specific
   has_website: false, progress: 0, initial_call_status: '', conversation_summary: '', call_date: '', meeting_date: '', meeting_note: '', followup_date: '', followup_note: ''
 };
@@ -305,6 +311,66 @@ const UserAvatar = ({ name, size = 'md' }) => {
 };
 
 // --- Components ---
+
+const VoiceRecorder = ({ onTranscript }) => {
+  const [isRecording, setIsRecording] = useState(false);
+  
+  const startRecording = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      alert('مرورگر شما از قابلیت تبدیل صدا به متن پشتیبانی نمی‌کند.');
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'fa-IR';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => setIsRecording(true);
+    recognition.onend = () => setIsRecording(false);
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error', event.error);
+      setIsRecording(false);
+    };
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      onTranscript(transcript);
+    };
+
+    recognition.start();
+  };
+
+  return (
+    <button 
+      type="button" 
+      onClick={startRecording} 
+      className={`p-2 rounded-full transition ${isRecording ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+      title="تبدیل گفتار به متن"
+    >
+      {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
+    </button>
+  );
+};
+
+const FlagFilter = ({ selectedFlags, onChange }) => {
+  const toggleFlag = (flag) => {
+    if (selectedFlags.includes(flag)) {
+      onChange(selectedFlags.filter(f => f !== flag));
+    } else {
+      onChange([...selectedFlags, flag]);
+    }
+  };
+
+  return (
+    <div className="flex gap-2 items-center text-xs">
+      <span className="text-gray-400 font-medium">فیلتر:</span>
+      <button onClick={() => toggleFlag('پیگیری فوری')} className={`px-2 py-1 rounded-lg border transition ${selectedFlags.includes('پیگیری فوری') ? 'bg-red-100 border-red-200 text-red-700 font-bold' : 'bg-white text-gray-500'}`}>فوری</button>
+      <button onClick={() => toggleFlag('پیگیری مهم')} className={`px-2 py-1 rounded-lg border transition ${selectedFlags.includes('پیگیری مهم') ? 'bg-amber-100 border-amber-200 text-amber-700 font-bold' : 'bg-white text-gray-500'}`}>مهم</button>
+      <button onClick={() => toggleFlag('technical_review')} className={`px-2 py-1 rounded-lg border transition ${selectedFlags.includes('technical_review') ? 'bg-indigo-100 border-indigo-200 text-indigo-700 font-bold' : 'bg-white text-gray-500'}`}>بررسی فنی</button>
+    </div>
+  );
+};
 
 const TimeFilter = ({ value, onChange, customRange, onCustomChange }) => {
     return (
@@ -831,7 +897,7 @@ const AIChatBox = ({ contextData }) => {
     );
 };
 
-const AIAnalysisTab = ({ issues, onboardings }) => {
+const AIAnalysisTab = ({ issues, onboardings, features }) => {
     const [loading, setLoading] = useState(false);
     const [analysisResult, setAnalysisResult] = useState('');
 
@@ -840,6 +906,11 @@ const AIAnalysisTab = ({ issues, onboardings }) => {
         let data = [];
         if (type === 'onboarding') {
             data = onboardings.map(u => ({ progress: u.progress, note: u.meeting_note || u.followup_note }));
+        } else if (type === 'features') {
+            // Filter non-done features
+            data = features
+                .filter(f => f.status !== 'انجام شد')
+                .map(f => ({ title: f.title, desc: f.desc_text, status: f.status, votes: f.repeat_count }));
         } else {
             data = issues.map(i => ({ type: i.type, desc: i.desc_text }));
         }
@@ -860,7 +931,7 @@ const AIAnalysisTab = ({ issues, onboardings }) => {
                         <h2 className="text-2xl font-black mb-2 flex items-center gap-2"><Sparkles className="text-amber-300"/> تحلیل خودکار</h2>
                         <p className="text-indigo-100 text-sm mb-6">تحلیل گزارشات موجود در بازه زمانی انتخاب شده</p>
                         
-                        <div className="flex gap-3">
+                        <div className="flex gap-3 flex-wrap">
                             <button onClick={() => handleAnalysis('general')} disabled={loading} className="bg-white text-indigo-700 px-4 py-2 rounded-xl font-bold hover:bg-indigo-50 transition shadow-lg flex items-center gap-2 text-sm">
                                 {loading ? <Loader2 size={16} className="animate-spin"/> : <Activity size={16}/>}
                                 مشکلات فنی
@@ -868,6 +939,10 @@ const AIAnalysisTab = ({ issues, onboardings }) => {
                             <button onClick={() => handleAnalysis('onboarding')} disabled={loading} className="bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold hover:bg-indigo-600 transition shadow-lg flex items-center gap-2 border border-indigo-400 text-sm">
                                 {loading ? <Loader2 size={16} className="animate-spin"/> : <GraduationCap size={16}/>}
                                 آنبوردینگ
+                            </button>
+                            <button onClick={() => handleAnalysis('features')} disabled={loading} className="bg-amber-400 text-indigo-900 px-4 py-2 rounded-xl font-bold hover:bg-amber-300 transition shadow-lg flex items-center gap-2 text-sm">
+                                {loading ? <Loader2 size={16} className="animate-spin"/> : <Lightbulb size={16}/>}
+                                فیچرها
                             </button>
                         </div>
                     </div>
@@ -880,7 +955,7 @@ const AIAnalysisTab = ({ issues, onboardings }) => {
                 )}
             </div>
 
-            <AIChatBox contextData={{ issues: issues.length, onboardings: onboardings.length, sample_issues: issues.slice(0, 10) }} />
+            <AIChatBox contextData={{ issues: issues.length, onboardings: onboardings.length, features: features?.length, sample_issues: issues.slice(0, 10) }} />
         </div>
     );
 };
@@ -906,6 +981,13 @@ export default function App() {
   
   const [tabTimeFilter, setTabTimeFilter] = useState(null);
   const [tabCustomRange, setTabCustomRange] = useState(null);
+  const [flagFilter, setFlagFilter] = useState([]); // ['پیگیری فوری', 'technical_review', ...]
+
+  const [dismissedFollowUps, setDismissedFollowUps] = useState(() => {
+    if (typeof window === 'undefined') return [];
+    const saved = localStorage.getItem('dismissedFollowUps');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   // Modal & Form States
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1006,7 +1088,40 @@ export default function App() {
       return filterDataByTime(data, r, c);
   };
 
-  const filteredIssues = useMemo(() => getFiltered(issues, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [issues, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
+  const filteredIssues = useMemo(() => {
+      let data = getFiltered(issues, activeTab === 'dashboard' || activeTab === 'ai-analysis');
+      
+      if (activeTab === 'issues' && flagFilter.length > 0) {
+          data = data.filter(i => {
+              // Check for priority flags
+              const hasPriorityFlag = flagFilter.some(f => f === i.flag);
+              // Check for technical review
+              const hasTechReview = flagFilter.includes('technical_review') && i.technical_review;
+              
+              // If only technical review is selected, show only those.
+              // If only priority flags selected, show those.
+              // If both, show union (OR logic) or Intersection? Usually OR in filters unless grouped.
+              // Let's assume OR for now: Show if it matches ANY selected filter criteria.
+              
+              // But we need to handle the case where 'technical_review' is selected.
+              // i.flag might be null.
+              
+              if (flagFilter.includes('technical_review')) {
+                  if (i.technical_review) return true;
+                  // If technical_review is the ONLY filter, and i.technical_review is false, return false (unless it matches other flags)
+              }
+              
+              // If we have priority filters selected, check i.flag
+              const priorityFilters = flagFilter.filter(f => f !== 'technical_review');
+              if (priorityFilters.length > 0) {
+                  if (priorityFilters.includes(i.flag)) return true;
+              }
+              
+              return false;
+          });
+      }
+      return data;
+  }, [issues, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab, flagFilter]);
   const filteredFrozen = useMemo(() => getFiltered(frozen, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [frozen, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
   const filteredRefunds = useMemo(() => getFiltered(refunds, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [refunds, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
   const filteredOnboardings = useMemo(() => getFiltered(onboardings, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [onboardings, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
@@ -1033,6 +1148,41 @@ export default function App() {
         .filter(([_, data]) => data.count > 3)
         .map(([username, data]) => ({ username, count: data.count, issues: data.issues }));
   }, [filteredIssues]);
+
+  const followUpList = useMemo(() => {
+    const userLastIssue = {};
+    
+    // Group by user and find last issue date
+    issues.forEach(i => {
+        const date = normalizeDate(i);
+        if (!date) return;
+        
+        if (!userLastIssue[i.username] || isAfter(date, userLastIssue[i.username].date)) {
+            userLastIssue[i.username] = { date, issue: i };
+        }
+    });
+    
+    const now = new Date();
+    const result = [];
+    
+    Object.entries(userLastIssue).forEach(([username, { date, issue }]) => {
+        // Check if dismissed
+        if (dismissedFollowUps.includes(username)) return;
+
+        const daysDiff = differenceInDays(now, date);
+        if (daysDiff >= 7 && daysDiff <= 12) {
+            result.push({ username, days: daysDiff, lastDate: date });
+        }
+    });
+    
+    return result.sort((a, b) => b.days - a.days);
+  }, [issues, dismissedFollowUps]);
+
+  const handleDismissFollowUp = (username) => {
+      const newDismissed = [...dismissedFollowUps, username];
+      setDismissedFollowUps(newDismissed);
+      localStorage.setItem('dismissedFollowUps', JSON.stringify(newDismissed));
+  };
 
   const handleAiChurnAnalysis = async (user) => {
     setAiLoading(true);
@@ -1074,7 +1224,18 @@ export default function App() {
 
     if (modalType === 'issue') {
       table = 'issues';
-      payload = { ...commonFields, desc_text: formData.desc_text, module: formData.module, type: formData.type, status: formData.status || 'باز', support: formData.support, subscription_status: formData.subscription_status, resolved_at: formData.resolved_at, technical_note: formData.technical_note };
+      payload = { 
+          ...commonFields, 
+          desc_text: formData.desc_text, 
+          module: formData.module, 
+          type: formData.type, 
+          status: formData.status || 'باز', 
+          support: formData.support, 
+          subscription_status: formData.subscription_status, 
+          resolved_at: formData.resolved_at, 
+          technical_note: formData.technical_note,
+          technical_review: formData.technical_review
+      };
       if (!isEdit) payload.created_at = createdTimestamp;
     } else if (modalType === 'frozen') {
       table = 'frozen';
@@ -1264,34 +1425,65 @@ export default function App() {
               </div>
               
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                {/* Churn Risk */}
-                <div className="xl:col-span-1 bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-red-100 flex flex-col h-80">
-                  <h4 className="font-bold text-gray-700 text-sm mb-4 flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-red-100 text-red-500 flex items-center justify-center"><AlertCircle size={14}/></span>
-                    ریسک ریزش (۳۰ روز اخیر)
-                  </h4>
-                  <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
-                    {churnRisks.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                        <CheckCircle2 size={40} className="text-emerald-500 mb-2" />
-                        <span className="text-xs">هیچ کاربری در خطر نیست!</span>
-                      </div>
-                    ) : churnRisks.map((user, idx) => (
-                      <div key={idx} className="bg-white border border-red-50 p-3 rounded-xl shadow-sm">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigateToProfile(user.username)}>
-                            <UserAvatar name={user.username} size="sm"/>
-                            <span className="font-bold text-sm text-gray-800">{user.username}</span>
-                          </div>
-                          <span className="bg-red-50 text-red-600 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-red-100">{user.count} خطا</span>
+                <div className="xl:col-span-1 flex flex-col gap-6">
+                    {/* Follow Up List */}
+                    <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-orange-100 flex flex-col h-64">
+                        <h4 className="font-bold text-gray-700 text-sm mb-4 flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center"><Bell size={14}/></span>
+                            پیگیری‌های مورد نیاز (۷-۱۲ روز)
+                        </h4>
+                        <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
+                            {followUpList.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                                    <CheckCircle2 size={32} className="text-emerald-500 mb-2" />
+                                    <span className="text-xs">هیچ پیگیری نیاز نیست!</span>
+                                </div>
+                            ) : followUpList.map((item, idx) => (
+                                <div key={idx} className="bg-white border border-orange-50 p-3 rounded-xl shadow-sm flex justify-between items-center group">
+                                    <div className="flex items-center gap-2">
+                                        <UserAvatar name={item.username} size="sm"/>
+                                        <div className="flex flex-col">
+                                            <span className="font-bold text-sm text-gray-800 cursor-pointer hover:text-blue-600" onClick={() => navigateToProfile(item.username)}>{item.username}</span>
+                                            <span className="text-[10px] text-gray-400">{item.days} روز پیش</span>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => handleDismissFollowUp(item.username)} className="text-gray-300 hover:text-emerald-500 transition" title="انجام شد/رد کردن">
+                                        <CheckCircle2 size={18}/>
+                                    </button>
+                                </div>
+                            ))}
                         </div>
-                        <button onClick={() => handleAiChurnAnalysis(user)} className="w-full flex items-center justify-center gap-1 text-[10px] text-purple-600 bg-purple-50 hover:bg-purple-600 hover:text-white border border-purple-100 px-3 py-1.5 rounded-lg transition">
-                          {aiLoading ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
-                          تحلیل هوشمند
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                    </div>
+
+                    {/* Churn Risk */}
+                    <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-red-100 flex flex-col h-64">
+                    <h4 className="font-bold text-gray-700 text-sm mb-4 flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-red-100 text-red-500 flex items-center justify-center"><AlertCircle size={14}/></span>
+                        ریسک ریزش (۳۰ روز اخیر)
+                    </h4>
+                    <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
+                        {churnRisks.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                            <CheckCircle2 size={40} className="text-emerald-500 mb-2" />
+                            <span className="text-xs">هیچ کاربری در خطر نیست!</span>
+                        </div>
+                        ) : churnRisks.map((user, idx) => (
+                        <div key={idx} className="bg-white border border-red-50 p-3 rounded-xl shadow-sm">
+                            <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigateToProfile(user.username)}>
+                                <UserAvatar name={user.username} size="sm"/>
+                                <span className="font-bold text-sm text-gray-800">{user.username}</span>
+                            </div>
+                            <span className="bg-red-50 text-red-600 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-red-100">{user.count} خطا</span>
+                            </div>
+                            <button onClick={() => handleAiChurnAnalysis(user)} className="w-full flex items-center justify-center gap-1 text-[10px] text-purple-600 bg-purple-50 hover:bg-purple-600 hover:text-white border border-purple-100 px-3 py-1.5 rounded-lg transition">
+                            {aiLoading ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                            تحلیل هوشمند
+                            </button>
+                        </div>
+                        ))}
+                    </div>
+                    </div>
                 </div>
 
                 {/* Analytics Charts */}
@@ -1348,10 +1540,13 @@ export default function App() {
 
           {activeTab === 'issues' && (
             <section className="h-full flex flex-col">
-              <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-2xl border shadow-sm">
-                <div className="flex gap-2 bg-slate-100 p-1 rounded-xl">
-                  <button onClick={() => setIssueViewMode('table')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${issueViewMode === 'table' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><List size={16}/> جدول</button>
-                  <button onClick={() => setIssueViewMode('kanban')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${issueViewMode === 'kanban' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><Columns size={16}/> کانبان</button>
+              <div className="flex flex-col md:flex-row justify-between items-center mb-4 bg-white p-3 rounded-2xl border shadow-sm gap-3">
+                <div className="flex items-center gap-4 w-full md:w-auto">
+                    <div className="flex gap-2 bg-slate-100 p-1 rounded-xl">
+                    <button onClick={() => setIssueViewMode('table')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${issueViewMode === 'table' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><List size={16}/> جدول</button>
+                    <button onClick={() => setIssueViewMode('kanban')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${issueViewMode === 'kanban' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><Columns size={16}/> کانبان</button>
+                    </div>
+                    <FlagFilter selectedFlags={flagFilter} onChange={setFlagFilter} />
                 </div>
                 <button onClick={() => openModal('issue')} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-200 flex items-center gap-2"><Plus size={16}/> ثبت مشکل</button>
               </div>
@@ -1374,7 +1569,12 @@ export default function App() {
                       {filteredIssues.map(row => (
                         <tr key={row.id} className={`border-b last:border-0 hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200' : ''}`}>
                           <td className="p-4 font-bold cursor-pointer hover:text-blue-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td>
-                          <td className="p-4 truncate max-w-xs">{row.desc_text}</td>
+                          <td className="p-4">
+                              <div className="flex items-center gap-2">
+                                  {row.technical_review && <div className="bg-indigo-100 p-1 rounded-md text-indigo-600" title="بررسی فنی"><Wrench size={12}/></div>}
+                                  <span className="truncate max-w-xs">{row.desc_text}</span>
+                              </div>
+                          </td>
                           <td className="p-4"><span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-600 text-xs border border-blue-100">{row.status}</span></td>
                           <td className="p-4 font-mono text-xs text-gray-400">{formatDate(row.created_at)}</td>
                           <td className="p-4 text-left"><button onClick={() => openModal('issue', row)} className="text-gray-400 hover:text-blue-600"><Edit size={16}/></button></td>
@@ -1394,7 +1594,10 @@ export default function App() {
                   <button onClick={() => setFeatureViewMode('table')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${featureViewMode === 'table' ? 'bg-white shadow text-purple-600' : 'text-gray-500'}`}><List size={16}/> جدول</button>
                   <button onClick={() => setFeatureViewMode('kanban')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${featureViewMode === 'kanban' ? 'bg-white shadow text-purple-600' : 'text-gray-500'}`}><Columns size={16}/> کانبان</button>
                 </div>
-                <button onClick={() => openModal('feature')} className="bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-purple-200 flex items-center gap-2"><Plus size={16}/> ثبت فیچر</button>
+                <div className="flex gap-2">
+                    <button onClick={() => { setActiveTab('ai-analysis'); }} className="bg-white text-purple-600 px-4 py-2 rounded-xl text-sm font-bold border border-purple-200 hover:bg-purple-50 flex items-center gap-2"><Sparkles size={16}/> تحلیل هوشمند</button>
+                    <button onClick={() => openModal('feature')} className="bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-purple-200 flex items-center gap-2"><Plus size={16}/> ثبت فیچر</button>
+                </div>
               </div>
               {featureViewMode === 'kanban' ? (
                 <div className="flex-1 overflow-hidden">
@@ -1443,7 +1646,7 @@ export default function App() {
           )}
 
           {activeTab === 'ai-analysis' && (
-            <AIAnalysisTab issues={filteredIssues} onboardings={filteredOnboardings} navigateToProfile={navigateToProfile} />
+            <AIAnalysisTab issues={filteredIssues} onboardings={filteredOnboardings} features={filteredFeatures} navigateToProfile={navigateToProfile} />
           )}
 
           {/* Simple Tables for Frozen and Refunds */}
@@ -1506,21 +1709,30 @@ export default function App() {
                                 <select value={formData.initial_call_status || ''} onChange={(e) => setFormData({...formData, initial_call_status: e.target.value})} className="border p-2 rounded-lg text-xs w-full"><option value="">وضعیت...</option><option value="پاسخ داد">پاسخ داد</option><option value="پاسخ نداد">پاسخ نداد</option><option value="رد تماس">رد تماس</option></select>
                                 <input type="text" placeholder="تاریخ (۱۴۰۳/...)" value={formData.call_date || ''} onChange={(e) => setFormData({...formData, call_date: e.target.value})} className="border p-2 rounded-lg text-xs"/>
                             </div>
-                            <textarea placeholder="خلاصه مکالمه..." rows="2" value={formData.conversation_summary || ''} onChange={(e) => setFormData({...formData, conversation_summary: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/>
+                            <div className="relative">
+                                <textarea placeholder="خلاصه مکالمه..." rows="2" value={formData.conversation_summary || ''} onChange={(e) => setFormData({...formData, conversation_summary: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/>
+                                <div className="absolute left-1 bottom-1"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, conversation_summary: (p.conversation_summary || '') + ' ' + text}))} /></div>
+                            </div>
                         </div>
 
                         {/* Section 2: Meeting */}
                         <div className="bg-slate-50 p-3 rounded-xl space-y-2 border">
                             <h4 className="font-bold text-gray-700 text-xs">۲. جلسه آنلاین</h4>
                             <input type="text" placeholder="تاریخ جلسه" value={formData.meeting_date || ''} onChange={(e) => setFormData({...formData, meeting_date: e.target.value})} className="border p-2 rounded-lg text-xs w-full"/>
-                            <textarea placeholder="توضیحات جلسه..." rows="2" value={formData.meeting_note || ''} onChange={(e) => setFormData({...formData, meeting_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/>
+                            <div className="relative">
+                                <textarea placeholder="توضیحات جلسه..." rows="2" value={formData.meeting_note || ''} onChange={(e) => setFormData({...formData, meeting_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/>
+                                <div className="absolute left-1 bottom-1"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, meeting_note: (p.meeting_note || '') + ' ' + text}))} /></div>
+                            </div>
                         </div>
 
                         {/* Section 3: Followup */}
                         <div className="bg-slate-50 p-3 rounded-xl space-y-2 border">
                             <h4 className="font-bold text-gray-700 text-xs">۳. پیگیری بعدی</h4>
                             <input type="text" placeholder="تاریخ فالوآپ" value={formData.followup_date || ''} onChange={(e) => setFormData({...formData, followup_date: e.target.value})} className="border p-2 rounded-lg text-xs w-full"/>
-                            <textarea placeholder="توضیحات پیگیری..." rows="2" value={formData.followup_note || ''} onChange={(e) => setFormData({...formData, followup_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/>
+                            <div className="relative">
+                                <textarea placeholder="توضیحات پیگیری..." rows="2" value={formData.followup_note || ''} onChange={(e) => setFormData({...formData, followup_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/>
+                                <div className="absolute left-1 bottom-1"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, followup_note: (p.followup_note || '') + ' ' + text}))} /></div>
+                            </div>
                         </div>
                     </div>
                 ) : (
@@ -1572,7 +1784,14 @@ export default function App() {
                         {modalType === 'issue' && (
                             <>
                                 <select value={formData.status || 'باز'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full"><option value="باز">باز</option><option value="در حال بررسی">در حال بررسی</option><option value="حل‌شده">حل‌شده</option></select>
-                                <textarea rows="3" placeholder="شرح مشکل..." value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
+                                <div className="relative">
+                                    <textarea rows="3" placeholder="شرح مشکل..." value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
+                                    <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, desc_text: (p.desc_text || '') + ' ' + text}))} /></div>
+                                </div>
+                                <div className="mt-3 flex items-center gap-2">
+                                    <input type="checkbox" id="tech_review" checked={formData.technical_review || false} onChange={(e) => setFormData({...formData, technical_review: e.target.checked})} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300"/>
+                                    <label htmlFor="tech_review" className="text-sm text-gray-700 font-bold flex items-center gap-1"><Wrench size={14} className="text-gray-500"/> بررسی توسط تیم فنی</label>
+                                </div>
                                 <div className="mt-2 text-xs text-gray-500 font-bold">اولویت</div>
                                 <select value={formData.flag || ''} onChange={(e) => setFormData({...formData, flag: e.target.value})} className="border p-3 rounded-xl text-sm w-full mt-1"><option value="">عادی</option><option value="پیگیری مهم">پیگیری مهم</option><option value="پیگیری فوری">پیگیری فوری</option></select>
                             </>
@@ -1583,13 +1802,22 @@ export default function App() {
                             <>
                                 <select value={formData.status || 'بررسی نشده'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full"><option value="بررسی نشده">بررسی نشده</option><option value="در تحلیل">در تحلیل</option><option value="در توسعه">در توسعه</option><option value="انجام شد">انجام شد</option></select>
                                 <input placeholder="عنوان فیچر" value={formData.title || ''} onChange={(e) => setFormData({...formData, title: e.target.value})} className="border p-3 rounded-xl text-sm w-full" />
-                                <textarea rows="3" placeholder="توضیحات..." value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
+                                <div className="relative">
+                                    <textarea rows="3" placeholder="توضیحات..." value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
+                                    <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, desc_text: (p.desc_text || '') + ' ' + text}))} /></div>
+                                </div>
                             </>
                         )}
 
                         {/* Frozen & Refund simple forms */}
                         {(modalType === 'frozen' || modalType === 'refund') && (
-                             <textarea rows="3" placeholder="توضیحات..." value={formData.desc_text || formData.reason || ''} onChange={(e) => setFormData({ ...formData, [modalType === 'refund' ? 'reason' : 'desc_text']: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
+                             <div className="relative">
+                                 <textarea rows="3" placeholder="توضیحات..." value={formData.desc_text || formData.reason || ''} onChange={(e) => setFormData({ ...formData, [modalType === 'refund' ? 'reason' : 'desc_text']: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
+                                 <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => {
+                                     const field = modalType === 'refund' ? 'reason' : 'desc_text';
+                                     setFormData(p => ({...p, [field]: (p[field] || '') + ' ' + text}));
+                                 }} /></div>
+                             </div>
                         )}
                     </>
                 )}
