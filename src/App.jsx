@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { format, differenceInHours, differenceInDays, parseISO, subDays, subYears, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
+import { format, differenceInHours, differenceInDays, parseISO, subDays, subYears, isAfter, isBefore, startOfDay, endOfDay, isValid } from 'date-fns';
 import jalaali from 'jalaali-js';
 import DatePicker, { DateObject } from "react-multi-date-picker";
 import persian from "react-date-object/calendars/persian";
@@ -72,6 +72,7 @@ import {
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
 
 // Whitelist
 const ALLOWED_USERS = ['milad', 'aliH', 'amirreza', 'mahta', 'sajad', 'yara', 'hamid', 'mojtaba', 'farhad'];
@@ -80,8 +81,6 @@ const ALLOWED_USERS = ['milad', 'aliH', 'amirreza', 'mahta', 'sajad', 'yara', 'h
 const VARDAST_API_KEY = import.meta.env.VITE_VARDAST_API_KEY || 'DVmo0Hi2NHQE3kLx-Q7V3NWZBophr_kKDlTXrj7bdtQ';
 const VARDAST_BASE_URL = import.meta.env.VITE_VARDAST_BASE_URL || 'https://apigw.vardast.chat/uaa/public';
 const CHANNEL_ID = import.meta.env.VITE_VARDAST_CHANNEL_ID || 'a5211d3f-f59a-4a0e-b604-dabef603810c';
-
-const ADMIN_CONTACT_ID = "00000000-0000-0000-0000-000000000001";
 
 const INITIAL_FORM_DATA = {
   username: '', phone_number: '', instagram_username: '', telegram_id: '', website: '', bio: '', 
@@ -102,7 +101,7 @@ const useTailwind = () => {
   useEffect(() => {
     if (!document.getElementById('tailwind-cdn')) {
       const config = document.createElement('script');
-      config.innerHTML = `window.tailwind = { config: { darkMode: 'class' } }`;
+      config.innerHTML = `tailwind.config = { darkMode: 'class' }`;
       document.head.appendChild(config);
 
       const script = document.createElement('script');
@@ -150,50 +149,53 @@ try {
 // --- Helpers ---
 const formatDate = (dateStr) => {
   if (!dateStr) return '-';
-  if (typeof dateStr === 'string' && dateStr.includes('T')) {
-    try {
-      return new Date(dateStr).toLocaleDateString('fa-IR');
-    } catch {
-      return dateStr;
+  try {
+    if (dateStr instanceof Date) return dateStr.toLocaleDateString('fa-IR');
+    if (typeof dateStr === 'string' && dateStr.includes('T')) {
+      const d = new Date(dateStr);
+      return isValid(d) ? d.toLocaleDateString('fa-IR') : dateStr;
     }
+    return String(dateStr);
+  } catch {
+    return String(dateStr);
   }
-  return dateStr;
 };
 
 const checkSLA = (item) => {
-  if (!item.created_at || typeof item.created_at !== 'string' || !item.created_at.includes('T')) return false; 
+  if (!item?.created_at || typeof item.created_at !== 'string' || !item.created_at.includes('T')) return false; 
   if (item.flag !== 'پیگیری فوری') return false;
   const openStatuses = ['باز', 'بررسی نشده'];
   if (!openStatuses.includes(item.status)) return false;
-  const created = new Date(item.created_at);
-  const diff = differenceInHours(new Date(), created);
-  return diff >= 2;
+  try {
+      const created = new Date(item.created_at);
+      if(!isValid(created)) return false;
+      const diff = differenceInHours(new Date(), created);
+      return diff >= 2;
+  } catch { return false; }
 };
 
 const parsePersianDate = (dateStr) => {
   if (!dateStr) return null;
+  if (dateStr instanceof Date) return dateStr;
   if (typeof dateStr === 'string' && dateStr.includes('T')) return new Date(dateStr);
   
-  // Normalize string numbers to English
-  const normalized = String(dateStr).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
-  
-  const parts = normalized.split('/');
-  if (parts.length === 3) {
-    const y = parseInt(parts[0], 10);
-    const m = parseInt(parts[1], 10);
-    const d = parseInt(parts[2], 10);
-    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
-      try {
-        const g = jalaali.toGregorian(y, m, d);
-        return new Date(g.gy, g.gm - 1, g.gd);
-      } catch (e) { return null; }
-    }
-  }
+  try {
+      const normalized = String(dateStr).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+      const parts = normalized.split('/');
+      if (parts.length === 3) {
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        const d = parseInt(parts[2], 10);
+        if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+            const g = jalaali.toGregorian(y, m, d);
+            return new Date(g.gy, g.gm - 1, g.gd);
+        }
+      }
+  } catch (e) { console.error(e); }
   return null;
 };
 
 const normalizeDate = (item) => {
-    // Try to find a date field
     const dateField = item.created_at || item.frozen_at || item.requested_at || item.date;
     if (!dateField) return null;
     if (dateField instanceof Date) return dateField;
@@ -201,6 +203,7 @@ const normalizeDate = (item) => {
 };
 
 const filterDataByTime = (data, range, customRange) => {
+    if (!data) return [];
     if (!range && !customRange) return data;
     
     const now = new Date();
@@ -208,10 +211,8 @@ const filterDataByTime = (data, range, customRange) => {
     let endDate = now;
 
     if (customRange && customRange.length === 2) {
-        // customRange is [DateObject, DateObject] (Jalali)
         startDate = customRange[0].toDate();
         endDate = customRange[1].toDate();
-        // Adjust to end of day for the end date
         endDate.setHours(23, 59, 59, 999);
     } else {
         switch (range) {
@@ -225,12 +226,11 @@ const filterDataByTime = (data, range, customRange) => {
 
     return data.filter(item => {
         const date = normalizeDate(item);
-        if (!date) return false;
+        if (!date || !isValid(date)) return false;
         return isAfter(date, startDate) && isBefore(date, endDate);
     });
 };
 
-// Generate a random UUID for the session or retrieve existing
 const getContactId = () => {
   if (typeof window === 'undefined') return "00000000-0000-0000-0000-000000000001";
   let id = localStorage.getItem('vardast_contact_id');
@@ -249,13 +249,6 @@ const callVardastAI = async (prompt, isJson = false) => {
   
   try {
     let finalPrompt = prompt;
-    // Removed JSON enforcement from prompt as requested, relying on assistant
-    // But specific functions might still need JSON structure if they parse it.
-    // However, the user said "Assistant has its own prompt".
-    // We will strip the "Return ONLY JSON" instruction if the user configured the assistant.
-    // BUT for safety in this code which expects JSON in some places, we might leave it implicit or minimal.
-    
-    // Check if we need JSON
     if (isJson) {
          finalPrompt += "\n\n(Please provide the response in JSON format)";
     }
@@ -277,8 +270,6 @@ const callVardastAI = async (prompt, isJson = false) => {
     );
 
     if (!response.ok) {
-        const errText = await response.text();
-        console.error('API Request failed:', errText);
         throw new Error(`API Error: ${response.status}`);
     }
 
@@ -386,12 +377,12 @@ const FlagFilter = ({ selectedFlags, onChange }) => {
 
 const TimeFilter = ({ value, onChange, customRange, onCustomChange }) => {
     return (
-        <div className="flex flex-wrap items-center gap-2 bg-white p-1 rounded-xl border shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-slate-800 p-1 rounded-xl border dark:border-slate-700 shadow-sm">
             {['1d', '7d', '30d', '1y'].map((range) => (
                 <button
                     key={range}
                     onClick={() => { onChange(range); onCustomChange(null); }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${value === range ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${value === range ? 'bg-blue-100 text-blue-700' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700'}`}
                 >
                     {range === '1d' ? '۲۴ ساعت' : range === '7d' ? '۷ روز' : range === '30d' ? '۳۰ روز' : 'یک سال'}
                 </button>
@@ -405,7 +396,7 @@ const TimeFilter = ({ value, onChange, customRange, onCustomChange }) => {
                 locale={persian_fa}
                 calendarPosition="bottom-left"
                 render={(value, openCalendar) => (
-                    <button onClick={openCalendar} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${value ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    <button onClick={openCalendar} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${value ? 'bg-blue-100 text-blue-700' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700'}`}>
                         <Calendar size={14}/>
                         {value ? value.toString() : 'تاریخ دلخواه'}
                     </button>
@@ -499,16 +490,16 @@ const UserSearchInput = ({ value, onChange, onSelect, allUsers }) => {
           onChange={(e) => { setTerm(e.target.value); onChange(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           placeholder="جستجوی نام کاربری، اینستاگرام، شماره یا تلگرام..."
-          className="w-full border p-3 pl-10 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 bg-slate-50/50 text-sm"
+          className="w-full border p-3 pl-10 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 bg-slate-50/50 text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white"
         />
         <Search size={16} className="absolute left-3 top-3.5 text-gray-400" />
       </div>
       {open && filtered.length > 0 && (
-        <div className="absolute top-full right-0 left-0 bg-white shadow-xl rounded-xl mt-1 border z-50 overflow-hidden">
+        <div className="absolute top-full right-0 left-0 bg-white shadow-xl rounded-xl mt-1 border z-50 overflow-hidden dark:bg-slate-800 dark:border-slate-600">
           {filtered.map((u) => (
             <div 
               key={u.username} 
-              className="p-3 hover:bg-blue-50 cursor-pointer border-b last:border-0 text-sm flex items-center gap-3"
+              className="p-3 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 last:border-0 text-sm flex items-center gap-3"
               onClick={() => {
                 onChange(u.username);
                 if (onSelect) onSelect(u);
@@ -517,7 +508,7 @@ const UserSearchInput = ({ value, onChange, onSelect, allUsers }) => {
             >
               <UserAvatar name={u.username} size="sm" />
               <div className="flex flex-col">
-                <span className="font-bold text-gray-700">{u.username}</span>
+                <span className="font-bold text-gray-700 dark:text-gray-200">{u.username}</span>
                 <div className="flex gap-2 text-[10px] text-gray-400">
                   {u.instagram_username && <span>IG: {u.instagram_username}</span>}
                   {u.phone_number && <span>PH: {u.phone_number}</span>}
@@ -672,7 +663,7 @@ const MeetingsTab = ({ meetings, openModal, navigateToProfile }) => {
                     <h2 className="font-bold text-lg text-gray-800 dark:text-white flex items-center gap-2"><Users size={24} className="text-teal-500"/> جلسات تیم</h2>
                     <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} className="bg-slate-50 border p-2 rounded-xl text-sm outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-white">
                         <option value="">همه اعضا</option>
-                        {['milad', 'aliH', 'amirreza', 'mahta', 'sajad', 'yara', 'hamid', 'mojtaba', 'farhad'].map(u => <option key={u} value={u}>{u}</option>)}
+                        {ALLOWED_USERS.map(u => <option key={u} value={u}>{u}</option>)}
                     </select>
                 </div>
                 <button onClick={() => openModal('meeting')} className="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm flex gap-2 items-center hover:bg-teal-700 shadow-lg shadow-teal-200 font-bold">
@@ -718,7 +709,7 @@ const CohortChart = ({ onboardings }) => {
   const data = useMemo(() => {
     const cohorts = {};
     onboardings.forEach(u => {
-      if (!u.created_at || typeof u.created_at !== 'string' || !u.created_at.includes('T')) return;
+      if (!u.created_at || !u.created_at.includes('T')) return;
       const date = new Date(u.created_at);
       const month = date.toLocaleDateString('fa-IR', { month: 'long' });
       if (!cohorts[month]) cohorts[month] = { month, total: 0, active: 0 };
@@ -1322,8 +1313,8 @@ export default function App() {
   const filteredFrozen = useMemo(() => getFiltered(frozen, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [frozen, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
   const filteredRefunds = useMemo(() => getFiltered(refunds, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [refunds, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
   const filteredOnboardings = useMemo(() => getFiltered(onboardings, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [onboardings, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
-  const filteredMeetings = useMemo(() => getFiltered(meetings, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [meetings, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
   const filteredFeatures = useMemo(() => getFiltered(features, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [features, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
+  const filteredMeetings = useMemo(() => getFiltered(meetings, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [meetings, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
 
   const analytics = useMemo(() => {
     const resolved = filteredIssues.filter((i) => i.status === 'حل‌شده').length;
@@ -1369,7 +1360,7 @@ export default function App() {
 
         const daysDiff = differenceInDays(now, date);
         if (daysDiff >= 7 && daysDiff <= 12) {
-            result.push({ username, days: daysDiff, lastDate: date });
+            result.push({ username, days: daysDiff, lastDate: date, issue });
         }
     });
     
@@ -1541,6 +1532,7 @@ export default function App() {
         else if (table === 'refunds') currentRecord = refunds.find(r => r.id === editingId);
         else if (table === 'profiles') currentRecord = profiles.find(r => r.id === editingId);
         else if (table === 'onboardings') currentRecord = onboardings.find(r => r.id === editingId);
+        else if (table === 'meetings') currentRecord = meetings.find(r => r.id === editingId);
 
         const prevHistory = currentRecord?.history || [];
         const newEntry = { user: currentUser, date: new Date().toISOString(), action: 'edit' };
@@ -1611,15 +1603,15 @@ export default function App() {
   
   if (!isAuthed) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-l from-slate-100 to-white p-4" dir="rtl">
-        <div className="bg-white shadow-2xl rounded-3xl p-8 w-full max-w-md border">
-          <h1 className="text-xl font-extrabold mb-4 text-center text-slate-800">ورود به داشبورد پشتیبانی</h1>
+      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-l from-slate-100 to-white dark:from-slate-900 dark:to-black p-4" dir="rtl">
+        <div className="bg-white dark:bg-slate-800 shadow-2xl rounded-3xl p-8 w-full max-w-md border dark:border-slate-700">
+          <h1 className="text-xl font-extrabold mb-4 text-center text-slate-800 dark:text-white">ورود به داشبورد پشتیبانی</h1>
           
           {loginStep === 'username' ? (
               <form onSubmit={handleUsernameSubmit} className="space-y-4 animate-in fade-in slide-in-from-right-8 duration-300">
                 <div>
-                    <label className="text-xs text-gray-500 font-bold mb-1 block">نام کاربری</label>
-                    <input type="text" className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-500 text-left" dir="ltr" placeholder="username" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} autoFocus />
+                    <label className="text-xs text-gray-500 dark:text-gray-400 font-bold mb-1 block">نام کاربری</label>
+                    <input type="text" className="w-full border dark:border-slate-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-500 text-left dark:bg-slate-700 dark:text-white" dir="ltr" placeholder="username" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} autoFocus />
                 </div>
                 {loginError && <div className="text-xs text-red-500 text-center">{loginError}</div>}
                 <button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-sky-500 text-white rounded-xl py-2.5 text-sm font-bold flex items-center justify-center gap-2">ادامه <ArrowRight size={16}/></button>
@@ -1627,12 +1619,12 @@ export default function App() {
           ) : (
               <form onSubmit={handlePasswordSubmit} className="space-y-4 animate-in fade-in slide-in-from-right-8 duration-300">
                 <div className="flex items-center justify-between mb-2">
-                     <span className="text-sm font-bold text-gray-700">{loginUsername}</span>
+                     <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{loginUsername}</span>
                      <button type="button" onClick={() => { setLoginStep('username'); setLoginError(''); }} className="text-xs text-blue-500 hover:underline">تغییر کاربر</button>
                 </div>
                 <div>
-                    <label className="text-xs text-gray-500 font-bold mb-1 block">{loginStep === 'set-password' ? 'تعیین کلمه عبور جدید' : 'کلمه عبور'}</label>
-                    <input type="password" className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-500" placeholder="Password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} autoFocus />
+                    <label className="text-xs text-gray-500 dark:text-gray-400 font-bold mb-1 block">{loginStep === 'set-password' ? 'تعیین کلمه عبور جدید' : 'کلمه عبور'}</label>
+                    <input type="password" className="w-full border dark:border-slate-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-500 dark:bg-slate-700 dark:text-white" placeholder="Password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} autoFocus />
                 </div>
                 {loginError && <div className="text-xs text-red-500 text-center">{loginError}</div>}
                 <button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-sky-500 text-white rounded-xl py-2.5 text-sm font-bold">{loginStep === 'set-password' ? 'ثبت و ورود' : 'ورود'}</button>
@@ -1955,7 +1947,6 @@ export default function App() {
             <AIAnalysisTab issues={filteredIssues} onboardings={filteredOnboardings} features={filteredFeatures} navigateToProfile={navigateToProfile} />
           )}
 
-          {/* Simple Tables for Frozen and Refunds */}
           {['frozen', 'refunds'].includes(activeTab) && (
             <div className="bg-white rounded-2xl border overflow-hidden p-6">
                 <div className="flex justify-between mb-4">
@@ -1980,7 +1971,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center backdrop-blur-sm z-[60] p-4">
           <div className="bg-white dark:bg-slate-800 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
