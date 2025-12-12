@@ -36,7 +36,9 @@ import {
   List,
   Columns,
   Clock,
-  UserCheck
+  UserCheck,
+  RefreshCw,
+  Settings
 } from 'lucide-react';
 
 import {
@@ -56,14 +58,14 @@ import {
   CartesianGrid
 } from 'recharts';
 
-// --- تنظیمات محیطی و API ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
 
-// --- تنظیمات API وردست (Vardast) ---
-const VARDAST_API_KEY = 'DVmo0Hi2NHQE3kLx-Q7V3NWZBophr_kKDlTXrj7bdtQ';
-const VARDAST_BASE_URL = 'https://apigw.vardast.chat/uaa/public';
+// Vardast Chat API Configuration
+const VARDAST_API_BASE = 'https://apigw.vardast.chat/uaa/public';
+const VARDAST_API_KEY = 'VdHRqM5x2h18QVj29298Ae3MZ6PG3f3-m6RJ6Yxeg1Q';
 
 const INITIAL_FORM_DATA = {
   username: '', phone_number: '', instagram_username: '', telegram_id: '', website: '', bio: '', 
@@ -72,11 +74,9 @@ const INITIAL_FORM_DATA = {
   last_frozen_at: '', resolve_status: '', note: '', title: '', category: '',
   repeat_count: '', importance: '', internal_note: '', reason: '', duration: '',
   action: '', suggestion: '', can_return: '', sales_source: '', ops_note: '', flag: '', date: '',
-  // Onboarding specific
   has_website: false, progress: 0, initial_call_status: '', conversation_summary: '', call_date: '', meeting_date: '', meeting_note: '', followup_date: '', followup_note: ''
 };
 
-// --- استایل‌دهی (Tailwind Injection) ---
 const useTailwind = () => {
   useEffect(() => {
     if (!document.getElementById('tailwind-cdn')) {
@@ -122,7 +122,137 @@ try {
   console.error('Supabase init error:', e);
 }
 
-// --- توابع کمکی (Helpers) ---
+// --- Vardast Chat API Service ---
+class VardastChatService {
+  constructor() {
+    this.baseUrl = VARDAST_API_BASE;
+    this.apiKey = VARDAST_API_KEY;
+    this.channels = [];
+    this.assistants = [];
+    this.selectedChannelId = null;
+    this.selectedAssistantId = null;
+    this.contactId = this.getOrCreateContactId();
+  }
+
+  getOrCreateContactId() {
+    let contactId = localStorage.getItem('vardast_contact_id');
+    if (!contactId) {
+      contactId = 'web_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('vardast_contact_id', contactId);
+    }
+    return contactId;
+  }
+
+  async request(endpoint, options = {}) {
+    const url = `${this.baseUrl}${endpoint}`;
+    const config = {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': this.apiKey,
+        ...options.headers
+      }
+    };
+
+    try {
+      const response = await fetch(url, config);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `HTTP Error: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Vardast API Error:', error);
+      throw error;
+    }
+  }
+
+  // Get all available channels
+  async getChannels() {
+    try {
+      const data = await this.request('/messenger/api/channel/');
+      this.channels = data.items || data || [];
+      return this.channels;
+    } catch (error) {
+      console.error('Failed to fetch channels:', error);
+      return [];
+    }
+  }
+
+  // Get all available assistants
+  async getAssistants() {
+    try {
+      const data = await this.request('/messenger/api/assistants/');
+      this.assistants = data.items || data || [];
+      return this.assistants;
+    } catch (error) {
+      console.error('Failed to fetch assistants:', error);
+      return [];
+    }
+  }
+
+  // Send message to assistant
+  async sendMessage(message, channelId = null, assistantId = null) {
+    const targetChannelId = channelId || this.selectedChannelId;
+    
+    if (!targetChannelId) {
+      throw new Error('Channel ID is required. Please select a channel first.');
+    }
+
+    const payload = {
+      message: message,
+      channel_id: targetChannelId,
+      contact_id: this.contactId
+    };
+
+    // assistant_id is optional - if not provided, uses channel's default assistant
+    if (assistantId || this.selectedAssistantId) {
+      payload.assistant_id = assistantId || this.selectedAssistantId;
+    }
+
+    const response = await this.request('/messenger/api/chat/public/process', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    return response;
+  }
+
+  // Get chat history for current contact
+  async getChatHistory(channelId = null, page = 1, size = 50) {
+    const targetChannelId = channelId || this.selectedChannelId;
+    
+    if (!targetChannelId) {
+      throw new Error('Channel ID is required');
+    }
+
+    const data = await this.request(
+      `/messenger/api/chat/${targetChannelId}/${this.contactId}/?page=${page}&size=${size}`
+    );
+    
+    return data;
+  }
+
+  setSelectedChannel(channelId) {
+    this.selectedChannelId = channelId;
+    localStorage.setItem('vardast_selected_channel', channelId);
+  }
+
+  setSelectedAssistant(assistantId) {
+    this.selectedAssistantId = assistantId;
+    localStorage.setItem('vardast_selected_assistant', assistantId);
+  }
+
+  loadSavedSelections() {
+    this.selectedChannelId = localStorage.getItem('vardast_selected_channel');
+    this.selectedAssistantId = localStorage.getItem('vardast_selected_assistant');
+  }
+}
+
+// Create singleton instance
+const vardastChat = new VardastChatService();
+
+// --- Helpers ---
 const formatDate = (dateStr) => {
   if (!dateStr) return '-';
   if (dateStr.includes('T')) {
@@ -132,15 +262,14 @@ const formatDate = (dateStr) => {
       return dateStr;
     }
   }
-  return dateStr; 
+  return dateStr;
 };
 
 const checkSLA = (item) => {
-  if (!item.created_at || !item.created_at.includes('T')) return false; 
+  if (!item.created_at || !item.created_at.includes('T')) return false;
   if (item.flag !== 'پیگیری فوری') return false;
   const openStatuses = ['باز', 'بررسی نشده'];
   if (!openStatuses.includes(item.status)) return false;
-
   const created = new Date(item.created_at);
   const diff = differenceInHours(new Date(), created);
   return diff >= 2;
@@ -164,100 +293,25 @@ const parsePersianDate = (dateStr) => {
   return null;
 };
 
-// --- منطق هوش مصنوعی (Vardast AI Logic) ---
-
-// متغیر برای کش کردن ID کانال
-let cachedChannelId = null;
-
-// 1. دریافت Channel ID از API
-const getChannelId = async () => {
-  if (cachedChannelId) return cachedChannelId;
-
+// Legacy Gemini AI call (kept for backward compatibility)
+const callGeminiAI = async (prompt, isJson = false) => {
+  if (!geminiApiKey) return alert('کلید هوش مصنوعی وارد نشده است.');
   try {
-    const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/channel/`, {
-      method: 'GET',
-      headers: {
-        'X-API-Key': VARDAST_API_KEY,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    const data = await response.json();
-
-    if (data.items && data.items.length > 0) {
-      // اولین کانال موجود را برمی‌داریم
-      cachedChannelId = data.items[0].id;
-      return cachedChannelId;
-    } else {
-      console.error('Vardast: No channels found.');
-      return null;
-    }
-  } catch (error) {
-    console.error('Vardast: Error fetching Channel ID:', error);
-    return null;
-  }
-};
-
-// 2. تولید/دریافت شناسه ادمین
-const generateUUID = () => {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
-};
-
-const ADMIN_CONTACT_ID = localStorage.getItem('vardast_admin_id') || generateUUID();
-if (!localStorage.getItem('vardast_admin_id')) localStorage.setItem('vardast_admin_id', ADMIN_CONTACT_ID);
-
-// 3. تابع اصلی ارسال پیام
-const callAI = async (prompt, isJson = false) => {
-  if (!VARDAST_API_KEY) return alert('کلید API وردست وارد نشده است.');
-  
-  // مرحله مهم: دریافت شناسه کانال
-  const channelId = await getChannelId();
-  if (!channelId) {
-    return alert('خطا: قادر به دریافت شناسه کانال از سرور وردست نیستیم. لطفا کانال‌های خود را چک کنید.');
-  }
-
-  try {
-    let finalPrompt = prompt;
-    if (isJson) {
-        finalPrompt += "\n\n(لطفا خروجی را فقط و فقط به صورت یک آبجکت JSON معتبر برگردان. هیچ متن اضافه، Markdown یا توضیحی ننویس.)";
-    }
-
     const response = await fetch(
-      `${VARDAST_BASE_URL}/messenger/api/chat/public/process`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${geminiApiKey}`,
       {
         method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json',
-            'X-API-Key': VARDAST_API_KEY
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: finalPrompt,
-          channel_id: channelId, // استفاده از ID داینامیک
-          contact_id: ADMIN_CONTACT_ID,
-          assistant_id: null 
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: isJson ? 'application/json' : 'text/plain' },
         }),
       }
     );
-
     const data = await response.json();
-
-    if (data.status === 'error') {
-        console.error('Vardast AI Error:', data.error);
-        return null;
-    }
-
-    let text = data.response;
-
-    if (isJson && text) {
-       text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    }
-
-    return text;
+    return data.candidates?.[0]?.content?.parts?.[0]?.text;
   } catch (error) {
-    console.error('AI Network Error:', error);
+    console.error('AI Error:', error);
     return null;
   }
 };
@@ -438,7 +492,7 @@ const OnboardingTab = ({ onboardings, openModal, navigateToProfile }) => {
           <Plus size={16} /> ثبت کاربر جدید
         </button>
       </div>
-       
+      
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {onboardings.map((item) => (
           <div key={item.id} className="bg-white rounded-2xl p-5 shadow-sm border border-indigo-50 hover:shadow-md transition relative overflow-hidden">
@@ -485,7 +539,45 @@ const OnboardingTab = ({ onboardings, openModal, navigateToProfile }) => {
   );
 };
 
-// Simple Cohort Analysis (Retention based on Registration Month)
+const HeatmapChart = ({ issues }) => {
+  const data = useMemo(() => {
+    const grid = Array(7).fill(0).map(() => Array(24).fill(0));
+    issues.forEach(i => {
+      if (!i.created_at || !i.created_at.includes('T')) return;
+      const date = new Date(i.created_at);
+      const day = date.getDay();
+      const hour = date.getHours();
+      grid[day][hour]++;
+    });
+    
+    const flatData = [];
+    const days = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه', 'شنبه'];
+    grid.forEach((hours, dayIdx) => {
+      hours.forEach((count, hourIdx) => {
+        if (count > 0) flatData.push({ day: days[dayIdx], hour: hourIdx, count, dayIdx });
+      });
+    });
+    return flatData;
+  }, [issues]);
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis type="number" dataKey="hour" name="ساعت" unit="h" domain={[0, 23]} tickCount={24} />
+        <YAxis type="category" dataKey="day" name="روز" allowDuplicatedCategory={false} />
+        <ZAxis type="number" dataKey="count" range={[50, 500]} name="تعداد" />
+        <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+        <Scatter name="Issues" data={data} fill="#8884d8">
+          {data.map((entry, index) => (
+            <Cell key={`cell-${index}`} fill={`rgba(136, 132, 216, ${Math.min(entry.count / 5 + 0.2, 1)})`} />
+          ))}
+        </Scatter>
+      </ScatterChart>
+    </ResponsiveContainer>
+  );
+};
+
 const CohortChart = ({ onboardings }) => {
   const data = useMemo(() => {
     const cohorts = {};
@@ -495,7 +587,7 @@ const CohortChart = ({ onboardings }) => {
       const month = date.toLocaleDateString('fa-IR', { month: 'long' });
       if (!cohorts[month]) cohorts[month] = { month, total: 0, active: 0 };
       cohorts[month].total++;
-      if (u.progress > 0) cohorts[month].active++; // Simple "active" logic
+      if (u.progress > 0) cohorts[month].active++;
     });
     return Object.values(cohorts).map(c => ({ ...c, retention: Math.round((c.active / c.total) * 100) }));
   }, [onboardings]);
@@ -593,7 +685,6 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
 
             {selectedUserStats ? (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    {/* User Info Card */}
                     <div className="bg-gradient-to-l from-blue-50 to-white p-6 rounded-3xl shadow-sm border border-blue-100 flex flex-col md:flex-row items-center md:items-start gap-6 relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-32 h-32 bg-blue-100 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
                         <UserAvatar name={selectedUserStats.username} size="lg" />
@@ -617,7 +708,6 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
                         </div>
                     </div>
 
-                    {/* Quick Actions */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <button onClick={() => openModal('issue', { username: selectedUserStats.username })} className="bg-white p-4 rounded-2xl border shadow-sm hover:shadow-md hover:border-blue-300 transition flex flex-col items-center gap-2 group">
                             <div className="p-2 bg-blue-50 text-blue-600 rounded-full group-hover:scale-110 transition"><AlertTriangle size={20}/></div>
@@ -637,7 +727,6 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
                         </button>
                     </div>
 
-                    {/* Timeline */}
                     <div className="bg-white/80 backdrop-blur p-6 rounded-3xl shadow-sm border border-white">
                         <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><History size={18} className="text-gray-500"/> تاریخچه فعالیت‌ها</h3>
                         {userRecords.length > 0 ? (
@@ -699,15 +788,177 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
     );
 };
 
+// --- NEW: AI Analysis Tab with Vardast Chat Integration ---
 const AIAnalysisTab = ({ issues, onboardings, navigateToProfile }) => {
     const [aiQuery, setAiQuery] = useState('');
     const [aiResult, setAiResult] = useState('');
     const [loading, setLoading] = useState(false);
+    const [chatMessages, setChatMessages] = useState([]);
+    const [chatInput, setChatInput] = useState('');
+    const [chatLoading, setChatLoading] = useState(false);
+    
+    // Vardast API state
+    const [channels, setChannels] = useState([]);
+    const [assistants, setAssistants] = useState([]);
+    const [selectedChannel, setSelectedChannel] = useState('');
+    const [selectedAssistant, setSelectedAssistant] = useState('');
+    const [apiStatus, setApiStatus] = useState('loading'); // 'loading' | 'connected' | 'error'
+    const [showSettings, setShowSettings] = useState(false);
+    
+    const chatContainerRef = useRef(null);
 
+    // Initialize Vardast Chat
+    useEffect(() => {
+        initializeVardastChat();
+    }, []);
+
+    const initializeVardastChat = async () => {
+        setApiStatus('loading');
+        try {
+            // Load saved selections
+            vardastChat.loadSavedSelections();
+            
+            // Fetch channels and assistants
+            const [fetchedChannels, fetchedAssistants] = await Promise.all([
+                vardastChat.getChannels(),
+                vardastChat.getAssistants()
+            ]);
+            
+            setChannels(fetchedChannels);
+            setAssistants(fetchedAssistants);
+            
+            // Set default selections
+            if (vardastChat.selectedChannelId) {
+                setSelectedChannel(vardastChat.selectedChannelId);
+            } else if (fetchedChannels.length > 0) {
+                setSelectedChannel(fetchedChannels[0].id);
+                vardastChat.setSelectedChannel(fetchedChannels[0].id);
+            }
+            
+            if (vardastChat.selectedAssistantId) {
+                setSelectedAssistant(vardastChat.selectedAssistantId);
+            } else if (fetchedAssistants.length > 0) {
+                setSelectedAssistant(fetchedAssistants[0].id);
+                vardastChat.setSelectedAssistant(fetchedAssistants[0].id);
+            }
+            
+            setApiStatus('connected');
+            
+            // Load chat history if channel is selected
+            if (vardastChat.selectedChannelId) {
+                await loadChatHistory();
+            }
+        } catch (error) {
+            console.error('Failed to initialize Vardast Chat:', error);
+            setApiStatus('error');
+        }
+    };
+
+    const loadChatHistory = async () => {
+        try {
+            const history = await vardastChat.getChatHistory();
+            if (history && history.items) {
+                const formattedMessages = history.items.map(msg => ({
+                    id: msg.id,
+                    text: msg.text,
+                    isUser: !msg.ai_created,
+                    timestamp: msg.timestamp
+                })).reverse(); // Reverse to show oldest first
+                setChatMessages(formattedMessages);
+            }
+        } catch (error) {
+            console.error('Failed to load chat history:', error);
+        }
+    };
+
+    const handleChannelChange = (channelId) => {
+        setSelectedChannel(channelId);
+        vardastChat.setSelectedChannel(channelId);
+        setChatMessages([]); // Clear messages when changing channel
+        loadChatHistory();
+    };
+
+    const handleAssistantChange = (assistantId) => {
+        setSelectedAssistant(assistantId);
+        vardastChat.setSelectedAssistant(assistantId);
+    };
+
+    // Send message to Vardast AI
+    const sendChatMessage = async () => {
+        if (!chatInput.trim() || chatLoading) return;
+        
+        if (!selectedChannel) {
+            alert('لطفا ابتدا یک کانال انتخاب کنید.');
+            setShowSettings(true);
+            return;
+        }
+
+        const userMessage = chatInput.trim();
+        setChatInput('');
+        setChatLoading(true);
+
+        // Add user message to chat
+        setChatMessages(prev => [...prev, {
+            id: Date.now(),
+            text: userMessage,
+            isUser: true,
+            timestamp: new Date().toISOString()
+        }]);
+
+        try {
+            const response = await vardastChat.sendMessage(userMessage, selectedChannel, selectedAssistant || null);
+            
+            if (response.status === 'success') {
+                setChatMessages(prev => [...prev, {
+                    id: response.message_id || Date.now() + 1,
+                    text: response.response,
+                    isUser: false,
+                    timestamp: new Date().toISOString()
+                }]);
+            } else {
+                throw new Error(response.error || 'Unknown error');
+            }
+        } catch (error) {
+            console.error('Chat error:', error);
+            setChatMessages(prev => [...prev, {
+                id: Date.now() + 1,
+                text: `خطا در ارتباط با هوش مصنوعی: ${error.message}`,
+                isUser: false,
+                isError: true,
+                timestamp: new Date().toISOString()
+            }]);
+        } finally {
+            setChatLoading(false);
+        }
+    };
+
+    // Scroll to bottom on new messages
+    useEffect(() => {
+        if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        }
+    }, [chatMessages]);
+
+    // Legacy analysis functions (using Gemini as fallback)
     const handleOnboardingAnalysis = async () => {
         setLoading(true);
         const prompt = `تحلیل روند آنبوردینگ کاربران: ${JSON.stringify(onboardings.slice(0, 30).map(u => ({ progress: u.progress, note: u.meeting_note || u.followup_note })))}. لطفا موانع اصلی پیشرفت و پیشنهادات برای افزایش نرخ تکمیل پروفایل را بگو.`;
-        const res = await callAI(prompt);
+        
+        // Try Vardast first, fallback to Gemini
+        if (selectedChannel) {
+            try {
+                const response = await vardastChat.sendMessage(prompt, selectedChannel, selectedAssistant);
+                if (response.status === 'success') {
+                    setAiResult(response.response);
+                    setLoading(false);
+                    return;
+                }
+            } catch (e) {
+                console.log('Vardast failed, falling back to Gemini');
+            }
+        }
+        
+        const res = await callGeminiAI(prompt);
         setAiResult(res || 'خطا در ارتباط با هوش مصنوعی');
         setLoading(false);
     };
@@ -715,7 +966,22 @@ const AIAnalysisTab = ({ issues, onboardings, navigateToProfile }) => {
     const handleGeneralAnalysis = async () => {
         setLoading(true);
         const prompt = `تحلیل کلی مشکلات اخیر: ${JSON.stringify(issues.slice(0, 50).map(i => ({ type: i.type, desc: i.desc_text })))}. لطفا مهمترین الگوها و پیشنهادات بهبود را بگو.`;
-        const res = await callAI(prompt);
+        
+        // Try Vardast first, fallback to Gemini
+        if (selectedChannel) {
+            try {
+                const response = await vardastChat.sendMessage(prompt, selectedChannel, selectedAssistant);
+                if (response.status === 'success') {
+                    setAiResult(response.response);
+                    setLoading(false);
+                    return;
+                }
+            } catch (e) {
+                console.log('Vardast failed, falling back to Gemini');
+            }
+        }
+        
+        const res = await callGeminiAI(prompt);
         setAiResult(res || 'خطا در ارتباط با هوش مصنوعی');
         setLoading(false);
     };
@@ -724,20 +990,112 @@ const AIAnalysisTab = ({ issues, onboardings, navigateToProfile }) => {
         if (!aiQuery) return;
         setLoading(true);
         const prompt = `در بین این مشکلات، کدام‌ها به "${aiQuery}" مربوط می‌شوند؟ لیست کن: ${JSON.stringify(issues.slice(0, 50).map(i => ({ id: i.id, username: i.username, desc: i.desc_text })))}`;
-        const res = await callAI(prompt);
+        
+        // Try Vardast first, fallback to Gemini
+        if (selectedChannel) {
+            try {
+                const response = await vardastChat.sendMessage(prompt, selectedChannel, selectedAssistant);
+                if (response.status === 'success') {
+                    setAiResult(response.response);
+                    setLoading(false);
+                    return;
+                }
+            } catch (e) {
+                console.log('Vardast failed, falling back to Gemini');
+            }
+        }
+        
+        const res = await callGeminiAI(prompt);
         setAiResult(res || 'خطا در ارتباط با هوش مصنوعی');
         setLoading(false);
     };
 
     return (
-        <div className="max-w-4xl mx-auto space-y-6">
+        <div className="max-w-6xl mx-auto space-y-6">
+            {/* Header with Status */}
             <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-8 rounded-3xl text-white shadow-lg relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
                 <div className="relative z-10">
-                    <h2 className="text-2xl font-black mb-2 flex items-center gap-2"><Sparkles className="text-amber-300"/> دستیار هوشمند (وردست)</h2>
-                    <p className="text-indigo-100 text-sm mb-6">تحلیل عمیق داده‌ها و جستجوی معنایی در گزارشات کاربران</p>
-                    
-                    <div className="flex gap-3">
+                    <div className="flex justify-between items-start mb-4">
+                        <div>
+                            <h2 className="text-2xl font-black mb-2 flex items-center gap-2">
+                                <Sparkles className="text-amber-300"/> دستیار هوشمند وردست
+                            </h2>
+                            <p className="text-indigo-100 text-sm">چت با هوش مصنوعی و تحلیل عمیق داده‌ها</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${
+                                apiStatus === 'connected' ? 'bg-emerald-500/20 text-emerald-200' :
+                                apiStatus === 'loading' ? 'bg-amber-500/20 text-amber-200' :
+                                'bg-red-500/20 text-red-200'
+                            }`}>
+                                <div className={`w-2 h-2 rounded-full ${
+                                    apiStatus === 'connected' ? 'bg-emerald-400' :
+                                    apiStatus === 'loading' ? 'bg-amber-400 animate-pulse' :
+                                    'bg-red-400'
+                                }`}></div>
+                                {apiStatus === 'connected' ? 'متصل' : apiStatus === 'loading' ? 'در حال اتصال...' : 'قطع'}
+                            </div>
+                            <button 
+                                onClick={() => setShowSettings(!showSettings)}
+                                className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition"
+                            >
+                                <Settings size={18} />
+                            </button>
+                            <button 
+                                onClick={initializeVardastChat}
+                                className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition"
+                                title="تلاش مجدد اتصال"
+                            >
+                                <RefreshCw size={18} className={apiStatus === 'loading' ? 'animate-spin' : ''} />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Settings Panel */}
+                    {showSettings && (
+                        <div className="bg-white/10 backdrop-blur rounded-2xl p-4 mb-4 space-y-3">
+                            <h4 className="font-bold text-sm mb-2">تنظیمات API</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs text-indigo-200 block mb-1">کانال (Channel)</label>
+                                    <select 
+                                        value={selectedChannel}
+                                        onChange={(e) => handleChannelChange(e.target.value)}
+                                        className="w-full bg-white/20 border border-white/20 rounded-xl p-2.5 text-sm text-white outline-none focus:border-white/40"
+                                    >
+                                        <option value="" className="text-gray-800">انتخاب کانال...</option>
+                                        {channels.map(ch => (
+                                            <option key={ch.id} value={ch.id} className="text-gray-800">
+                                                {ch.name} ({ch.platform})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs text-indigo-200 block mb-1">اسیستنت (اختیاری)</label>
+                                    <select 
+                                        value={selectedAssistant}
+                                        onChange={(e) => handleAssistantChange(e.target.value)}
+                                        className="w-full bg-white/20 border border-white/20 rounded-xl p-2.5 text-sm text-white outline-none focus:border-white/40"
+                                    >
+                                        <option value="" className="text-gray-800">پیش‌فرض کانال</option>
+                                        {assistants.map(ast => (
+                                            <option key={ast.id} value={ast.id} className="text-gray-800">
+                                                {ast.assistant_name} ({ast.model})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="text-[10px] text-indigo-200 mt-2">
+                                Contact ID: {vardastChat.contactId}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Quick Analysis Buttons */}
+                    <div className="flex gap-3 flex-wrap">
                         <button onClick={handleGeneralAnalysis} disabled={loading} className="bg-white text-indigo-700 px-6 py-3 rounded-xl font-bold hover:bg-indigo-50 transition shadow-lg flex items-center gap-2">
                             {loading ? <Loader2 size={18} className="animate-spin"/> : <Activity size={18}/>}
                             تحلیل کلی وضعیت
@@ -750,29 +1108,118 @@ const AIAnalysisTab = ({ issues, onboardings, navigateToProfile }) => {
                 </div>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Search size={18}/> جستجوی معنایی</h3>
-                <div className="flex gap-2">
-                    <input 
-                        value={aiQuery} 
-                        onChange={(e) => setAiQuery(e.target.value)}
-                        placeholder="مثلا: کاربرانی که مشکل درگاه پرداخت داشتند..." 
-                        className="flex-1 bg-slate-50 border border-slate-200 p-3 rounded-xl outline-none focus:border-purple-500 transition"
-                        onKeyDown={(e) => e.key === 'Enter' && handleSemanticSearch()}
-                    />
-                    <button onClick={handleSemanticSearch} disabled={loading} className="bg-purple-600 text-white px-4 rounded-xl hover:bg-purple-700 transition shadow-lg shadow-purple-200">
-                        {loading ? <Loader2 size={20} className="animate-spin"/> : <ArrowRight size={20}/>}
-                    </button>
-                </div>
-            </div>
+            {/* Main Content Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Chat Interface */}
+                <div className="bg-white rounded-3xl shadow-sm border border-slate-100 flex flex-col h-[500px]">
+                    <div className="p-4 border-b flex items-center justify-between">
+                        <h3 className="font-bold text-gray-700 flex items-center gap-2">
+                            <MessageSquare size={18} className="text-purple-500"/>
+                            چت با هوش مصنوعی
+                        </h3>
+                        {selectedChannel && (
+                            <span className="text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded-lg">
+                                {channels.find(c => c.id === selectedChannel)?.name || 'کانال انتخابی'}
+                            </span>
+                        )}
+                    </div>
+                    
+                    {/* Chat Messages */}
+                    <div 
+                        ref={chatContainerRef}
+                        className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar"
+                    >
+                        {chatMessages.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                                <BrainCircuit size={48} className="mb-3 opacity-30" />
+                                <p className="text-sm">سوال خود را بپرسید...</p>
+                            </div>
+                        ) : (
+                            chatMessages.map((msg) => (
+                                <div 
+                                    key={msg.id}
+                                    className={`flex ${msg.isUser ? 'justify-end' : 'justify-start'}`}
+                                >
+                                    <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${
+                                        msg.isUser 
+                                            ? 'bg-purple-600 text-white rounded-br-sm' 
+                                            : msg.isError
+                                                ? 'bg-red-50 text-red-600 border border-red-100 rounded-bl-sm'
+                                                : 'bg-gray-100 text-gray-800 rounded-bl-sm'
+                                    }`}>
+                                        <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                                        <span className={`text-[10px] mt-1 block ${
+                                            msg.isUser ? 'text-purple-200' : 'text-gray-400'
+                                        }`}>
+                                            {new Date(msg.timestamp).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                        {chatLoading && (
+                            <div className="flex justify-start">
+                                <div className="bg-gray-100 p-3 rounded-2xl rounded-bl-sm">
+                                    <Loader2 size={20} className="animate-spin text-purple-500" />
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
-            {aiResult && (
-                <div className="bg-white p-8 rounded-3xl shadow-lg border border-purple-100 animate-in fade-in slide-in-from-bottom-4">
-                    <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed whitespace-pre-line">
-                        {aiResult}
+                    {/* Chat Input */}
+                    <div className="p-4 border-t">
+                        <div className="flex gap-2">
+                            <input 
+                                value={chatInput}
+                                onChange={(e) => setChatInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendChatMessage()}
+                                placeholder={selectedChannel ? "پیام خود را بنویسید..." : "ابتدا کانال را انتخاب کنید..."}
+                                disabled={!selectedChannel || chatLoading}
+                                className="flex-1 bg-slate-50 border border-slate-200 p-3 rounded-xl outline-none focus:border-purple-500 transition text-sm disabled:opacity-50"
+                            />
+                            <button 
+                                onClick={sendChatMessage}
+                                disabled={!selectedChannel || chatLoading || !chatInput.trim()}
+                                className="bg-purple-600 text-white px-4 rounded-xl hover:bg-purple-700 transition shadow-lg shadow-purple-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {chatLoading ? <Loader2 size={20} className="animate-spin"/> : <Send size={20}/>}
+                            </button>
+                        </div>
                     </div>
                 </div>
-            )}
+
+                {/* Semantic Search & Results */}
+                <div className="space-y-4">
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                        <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Search size={18}/> جستجوی معنایی در مشکلات</h3>
+                        <div className="flex gap-2">
+                            <input 
+                                value={aiQuery} 
+                                onChange={(e) => setAiQuery(e.target.value)}
+                                placeholder="مثلا: کاربرانی که مشکل درگاه پرداخت داشتند..." 
+                                className="flex-1 bg-slate-50 border border-slate-200 p-3 rounded-xl outline-none focus:border-purple-500 transition text-sm"
+                                onKeyDown={(e) => e.key === 'Enter' && handleSemanticSearch()}
+                            />
+                            <button onClick={handleSemanticSearch} disabled={loading} className="bg-purple-600 text-white px-4 rounded-xl hover:bg-purple-700 transition shadow-lg shadow-purple-200">
+                                {loading ? <Loader2 size={20} className="animate-spin"/> : <ArrowRight size={20}/>}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Analysis Result */}
+                    {aiResult && (
+                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-purple-100 animate-in fade-in slide-in-from-bottom-4 max-h-[350px] overflow-y-auto custom-scrollbar">
+                            <h4 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+                                <Sparkles size={16} className="text-purple-500" />
+                                نتیجه تحلیل
+                            </h4>
+                            <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed whitespace-pre-line">
+                                {aiResult}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
         </div>
     );
 };
@@ -795,8 +1242,7 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   
-  // View Modes
-  const [issueViewMode, setIssueViewMode] = useState('table'); // 'table' | 'kanban'
+  const [issueViewMode, setIssueViewMode] = useState('table');
   const [featureViewMode, setFeatureViewMode] = useState('table');
 
   const [isAuthed, setIsAuthed] = useState(() => {
@@ -907,6 +1353,7 @@ export default function App() {
         .map(([username, data]) => ({ username, count: data.count, issues: data.issues }));
   }, [issues]);
 
+  // Updated to use Vardast Chat
   const handleAiChurnAnalysis = async (user) => {
     setAiLoading(true);
     const prompt = `تحلیل خطر ریزش کاربر ${user.username} با ${user.count} گزارش در ۳۰ روز اخیر. لیست مشکلات: ${JSON.stringify(user.issues)}. لطفا خروجی JSON بده شامل: 
@@ -916,26 +1363,37 @@ export default function App() {
     4. message: پیام پیشنهادی برای دلجویی.
     به وضعیت حل شدن یا نشدن مشکلات توجه کن.`;
     
-    // ارسال درخواست به هوش مصنوعی با فلگ جیسون
-    const res = await callAI(prompt, true);
+    // Try Vardast Chat first
+    if (vardastChat.selectedChannelId) {
+        try {
+            const response = await vardastChat.sendMessage(prompt);
+            if (response.status === 'success') {
+                setAiLoading(false);
+                try { 
+                    const data = JSON.parse(response.response); 
+                    alert(`🔥 خطر ریزش: ${data.anger_score}/10\n📝 خلاصه: ${data.summary}\n🔍 علت: ${data.root_cause}\n💬 پیشنهاد: ${data.message}`); 
+                } catch(e) { 
+                    alert(response.response); 
+                }
+                return;
+            }
+        } catch (e) {
+            console.log('Vardast failed, falling back to Gemini');
+        }
+    }
     
+    // Fallback to Gemini
+    const res = await callGeminiAI(prompt, true);
     setAiLoading(false);
     if (res) {
-      try { 
-          const data = JSON.parse(res); 
-          alert(`🔥 خطر ریزش: ${data.anger_score}/10\n📝 خلاصه: ${data.summary}\n🔍 علت: ${data.root_cause}\n💬 پیشنهاد: ${data.message}`); 
-      }
-      catch(e) { 
-          console.error(e);
-          alert('خروجی هوش مصنوعی فرمت JSON صحیح نداشت:\n' + res); 
-      }
+      try { const data = JSON.parse(res); alert(`🔥 خطر ریزش: ${data.anger_score}/10\n📝 خلاصه: ${data.summary}\n🔍 علت: ${data.root_cause}\n💬 پیشنهاد: ${data.message}`); }
+      catch(e) { alert(res); }
     }
   };
 
   const chartData = useMemo(() => {
     const acc = {};
     issues.forEach((i) => { 
-        // Use ISO date if available, else simple string
         const d = i.created_at ? (i.created_at.includes('T') ? i.created_at.split('T')[0] : i.created_at.split(' ')[0]) : 'نامشخص'; 
         acc[d] = (acc[d] || 0) + 1; 
     });
@@ -945,7 +1403,6 @@ export default function App() {
   const handleSave = async (e) => {
     e.preventDefault();
     const isEdit = !!editingId;
-    // Save ISO string for new items to enable SLA logic
     const createdTimestamp = formData.date ? new Date(formData.date).toISOString() : new Date().toISOString(); 
     
     let table = '';
@@ -1002,9 +1459,8 @@ export default function App() {
     if (!supabase) return alert('دیتابیس متصل نیست.');
     let error = null;
     if (isEdit) {
-      // Audit log simulation
       if (['issues', 'features'].includes(table)) {
-         payload.last_updated_by = 'Admin'; // Mock
+         payload.last_updated_by = 'Admin';
          payload.last_updated_at = new Date().toISOString();
       }
       const res = await supabase.from(table).update(payload).eq('id', editingId);
@@ -1054,13 +1510,10 @@ export default function App() {
     }
     setIsModalOpen(true);
   };
-
-  // ... (UserProfile, AIAnalysisTab, etc. are passed props or defined above)
   
   if (appPassword && !isAuthed) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-l from-slate-100 to-white p-4" dir="rtl">
-        {/* Login form code */}
         <div className="bg-white shadow-2xl rounded-3xl p-8 w-full max-w-md border">
           <h1 className="text-xl font-extrabold mb-4 text-center text-slate-800">ورود به داشبورد پشتیبانی</h1>
           <form onSubmit={handleLogin} className="space-y-4">
@@ -1094,7 +1547,7 @@ export default function App() {
             { id: 'refunds', label: 'بازگشت وجه', icon: CreditCard },
             { id: 'onboarding', label: 'ورود کاربران', icon: GraduationCap },
             { id: 'profile', label: 'پروفایل کاربر', icon: User },
-            { id: 'ai-analysis', label: 'تحلیل هوشمند', icon: BrainCircuit }
+            { id: 'ai-analysis', label: 'دستیار هوشمند', icon: BrainCircuit }
           ].map((item) => (
             <button key={item.id} onClick={() => { setActiveTab(item.id); if(window.innerWidth < 768) setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm transition-all ${activeTab === item.id ? 'bg-blue-50 text-blue-700 font-bold border border-blue-100' : 'text-slate-600 hover:bg-gray-50'}`}>
               <item.icon size={18} className="flex-shrink-0" />
