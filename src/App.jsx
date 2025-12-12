@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { format, differenceInHours, parseISO } from 'date-fns';
+import { differenceInHours } from 'date-fns';
 import jalaali from 'jalaali-js';
 
 import {
@@ -28,34 +28,29 @@ import {
   Send,
   Edit,
   History,
-  UserPlus,
   BrainCircuit,
-  MessageSquare,
   ArrowRight,
   GraduationCap,
   List,
   Columns,
-  Clock,
-  UserCheck
+  Clock
 } from 'lucide-react';
 
 import {
   XAxis,
   Tooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
   AreaChart,
   Area,
   ScatterChart,
   Scatter,
   YAxis,
   ZAxis,
-  CartesianGrid
+  CartesianGrid,
+  Cell
 } from 'recharts';
 
+// --- محیط ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
@@ -64,8 +59,9 @@ const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
 const VARDAST_API_KEY = "b9v8WdDYu4Qr-BQw2AJUCkJQZFwodrIBfb6et_tmF14";
 const VARDAST_CHANNEL_ID = "2da7da68-ce0e-4f6a-a5ed-b147b14eae26";
 const VARDAST_BASE_URL = "https://apigw.vardast.chat/uaa/public";
-// یک آیدی ثابت برای ادمین داشبورد تا سابقه چت حفظ شود
-const SYSTEM_CONTACT_ID = "550e8400-e29b-41d4-a716-446655440000"; 
+
+// متغیر کش برای جلوگیری از درخواست‌های تکراری
+let cachedContactId = null;
 
 const INITIAL_FORM_DATA = {
   username: '', phone_number: '', instagram_username: '', telegram_id: '', website: '', bio: '', 
@@ -103,8 +99,6 @@ const useTailwind = () => {
         }
         .animate-blob { animation: blob 7s infinite; }
         .animate-pulse-red { animation: pulse-red 2s infinite; }
-        .animation-delay-2000 { animation-delay: 2s; }
-        .animation-delay-4000 { animation-delay: 4s; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -165,11 +159,46 @@ const parsePersianDate = (dateStr) => {
   return null;
 };
 
-// --- جایگزینی تابع جمنای با وردست ---
+// --- Vardast Logic (Corrected) ---
+
+// تابع کمکی برای یافتن شناسه مخاطب واقعی
+const getRealContactId = async () => {
+  try {
+    const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/chat/contacts/?channel_ids=${VARDAST_CHANNEL_ID}&size=1`, {
+      method: 'GET',
+      headers: { 
+        'X-API-Key': VARDAST_API_KEY, 
+        'Content-Type': 'application/json' 
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (data.items && data.items.length > 0) {
+      console.log("Real Contact Found:", data.items[0].id);
+      return data.items[0].id;
+    } else {
+      console.error("No contacts found. Please message your bot first.");
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching contacts:", error);
+    return null;
+  }
+};
+
 const callVardastAI = async (prompt, isJson = false) => {
   if (!VARDAST_API_KEY) return alert('کلید API وردست وارد نشده است.');
   
   try {
+    // اگر آیدی مخاطب نداریم، پیدایش کن
+    if (!cachedContactId) {
+      cachedContactId = await getRealContactId();
+      if (!cachedContactId) {
+        return "خطا: هیچ مخاطبی یافت نشد. لطفاً در پلتفرم متصل شده (تلگرام/اینستاگرام) یک پیام به بات بفرستید.";
+      }
+    }
+
     const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/chat/public/process`, {
       method: 'POST',
       headers: { 
@@ -179,28 +208,33 @@ const callVardastAI = async (prompt, isJson = false) => {
       body: JSON.stringify({
         message: prompt,
         channel_id: VARDAST_CHANNEL_ID,
-        contact_id: SYSTEM_CONTACT_ID, 
+        contact_id: cachedContactId,
         assistant_id: null 
       }),
     });
+
+    if (response.status === 422) {
+       console.error("Vardast 422 Error: Invalid Contact ID.");
+       cachedContactId = null; // Reset cache
+       return "خطای اعتبارسنجی (422). لطفا دوباره تلاش کنید.";
+    }
 
     const data = await response.json();
 
     if (data.status === 'success' && data.response) {
       let resultText = data.response;
-      // پاکسازی مارک‌داون JSON در صورت نیاز
       if (isJson) {
         resultText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
       }
       return resultText;
     } else {
       console.error('Vardast Error:', data);
-      return null;
+      return `خطا: ${data.error || 'Unknown error'}`;
     }
 
   } catch (error) {
     console.error('Vardast Connection Error:', error);
-    return null;
+    return "خطای ارتباط با سرور.";
   }
 };
 
@@ -267,8 +301,8 @@ const UserSearchInput = ({ value, onChange, onSelect, allUsers }) => {
           value={term}
           onChange={(e) => { setTerm(e.target.value); onChange(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
-          placeholder="جستجوی نام کاربری، اینستاگرام، شماره یا تلگرام..."
-          className="w-full border p-3 pl-10 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 bg-slate-50/50 text-sm"
+          placeholder="جستجو..."
+          className="w-full border p-3 pl-10 rounded-xl outline-none focus:border-blue-500 bg-slate-50/50 text-sm"
         />
         <Search size={16} className="absolute left-3 top-3.5 text-gray-400" />
       </div>
@@ -287,10 +321,7 @@ const UserSearchInput = ({ value, onChange, onSelect, allUsers }) => {
               <UserAvatar name={u.username} size="sm" />
               <div className="flex flex-col">
                 <span className="font-bold text-gray-700">{u.username}</span>
-                <div className="flex gap-2 text-[10px] text-gray-400">
-                  {u.instagram_username && <span>IG: {u.instagram_username}</span>}
-                  {u.phone_number && <span>PH: {u.phone_number}</span>}
-                </div>
+                <span className="text-[10px] text-gray-400">{u.phone_number || u.instagram_username}</span>
               </div>
             </div>
           ))}
@@ -350,11 +381,6 @@ const KanbanBoard = ({ items, onStatusChange, columns, navigateToProfile, openMo
                               <span className="font-mono">{formatDate(item.created_at)}</span>
                               {item.flag && <span className={`px-1.5 py-0.5 rounded font-bold border ${item.flag === 'پیگیری فوری' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>{item.flag}</span>}
                             </div>
-                            {item.last_updated_by && (
-                              <div className="mt-2 pt-2 border-t flex gap-1 items-center text-[9px] text-gray-400">
-                                <Clock size={10}/> آپدیت: {item.last_updated_by} ({formatDate(item.last_updated_at)})
-                              </div>
-                            )}
                           </div>
                         )}
                       </Draggable>
@@ -429,17 +455,15 @@ const OnboardingTab = ({ onboardings, openModal, navigateToProfile }) => {
 
 const HeatmapChart = ({ issues }) => {
   const data = useMemo(() => {
-    // Initialize 7 days x 24 hours grid
     const grid = Array(7).fill(0).map(() => Array(24).fill(0));
     issues.forEach(i => {
       if (!i.created_at || !i.created_at.includes('T')) return;
       const date = new Date(i.created_at);
-      const day = date.getDay(); // 0=Sun
+      const day = date.getDay(); 
       const hour = date.getHours();
       grid[day][hour]++;
     });
     
-    // Flatten for ScatterChart: { x: hour, y: day, z: count }
     const flatData = [];
     const days = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه', 'شنبه'];
     grid.forEach((hours, dayIdx) => {
@@ -468,7 +492,6 @@ const HeatmapChart = ({ issues }) => {
   );
 };
 
-// Simple Cohort Analysis (Retention based on Registration Month)
 const CohortChart = ({ onboardings }) => {
   const data = useMemo(() => {
     const cohorts = {};
@@ -478,7 +501,7 @@ const CohortChart = ({ onboardings }) => {
       const month = date.toLocaleDateString('fa-IR', { month: 'long' });
       if (!cohorts[month]) cohorts[month] = { month, total: 0, active: 0 };
       cohorts[month].total++;
-      if (u.progress > 0) cohorts[month].active++; // Simple "active" logic
+      if (u.progress > 0) cohorts[month].active++;
     });
     return Object.values(cohorts).map(c => ({ ...c, retention: Math.round((c.active / c.total) * 100) }));
   }, [onboardings]);
@@ -501,9 +524,7 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
     const [selectedUserStats, setSelectedUserStats] = useState(null);
     const [suggestions, setSuggestions] = useState([]);
 
-    useEffect(() => {
-        setSearch(profileSearch || '');
-    }, [profileSearch]);
+    useEffect(() => { setSearch(profileSearch || ''); }, [profileSearch]);
 
     useEffect(() => {
         const found = allUsers.find(u => u.username === search);
@@ -517,8 +538,7 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
             const lowerVal = val.toLowerCase();
             setSuggestions(allUsers.filter(u => 
                 u.username.toLowerCase().includes(lowerVal) || 
-                (u.phone_number && u.phone_number.includes(lowerVal)) || 
-                (u.instagram_username && u.instagram_username.toLowerCase().includes(lowerVal))
+                (u.phone_number && u.phone_number.includes(lowerVal))
             ).slice(0, 5));
         } else {
             setSuggestions([]);
@@ -549,7 +569,7 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
                     <div className="flex items-center border border-gray-200 rounded-2xl bg-gray-50/50 overflow-hidden focus-within:ring-2 ring-blue-100 transition-all">
                         <div className="pl-3 pr-4 text-gray-400"><Search size={18} /></div>
                         <input 
-                            placeholder="جستجو (نام کاربری، شماره، اینستاگرام)..." 
+                            placeholder="جستجو (نام کاربری، شماره)..." 
                             value={search} 
                             className="w-full p-3 bg-transparent outline-none text-sm" 
                             onChange={(e) => handleSearch(e.target.value)} 
@@ -564,7 +584,6 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
                                         <span className="font-semibold text-gray-700">{u.username}</span>
                                         <div className="flex gap-3 text-[10px] text-gray-400">
                                             {u.phone_number && <span>{u.phone_number}</span>}
-                                            {u.instagram_username && <span>@{u.instagram_username}</span>}
                                         </div>
                                     </div>
                                 </div>
@@ -576,108 +595,37 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
 
             {selectedUserStats ? (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    {/* User Info Card */}
                     <div className="bg-gradient-to-l from-blue-50 to-white p-6 rounded-3xl shadow-sm border border-blue-100 flex flex-col md:flex-row items-center md:items-start gap-6 relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-32 h-32 bg-blue-100 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
                         <UserAvatar name={selectedUserStats.username} size="lg" />
                         <div className="flex-1 text-center md:text-right z-10 w-full">
-                            <div className="flex flex-col md:flex-row justify-between items-center mb-4">
-                                <div>
-                                    <h2 className="text-2xl font-black text-gray-800 mb-1">{selectedUserStats.username}</h2>
-                                    {selectedUserStats.bio && <p className="text-gray-500 text-sm max-w-lg">{selectedUserStats.bio}</p>}
-                                </div>
-                                <button onClick={() => openModal('profile', selectedUserStats)} className="text-blue-600 bg-blue-100 hover:bg-blue-200 px-4 py-2 rounded-xl text-xs font-bold transition mt-3 md:mt-0 flex gap-2 items-center">
-                                    <Edit size={14}/> ویرایش پروفایل
-                                </button>
-                            </div>
-                            
-                            <div className="flex flex-wrap justify-center md:justify-start gap-3">
-                                {selectedUserStats.phone_number && <span className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-xl border text-sm text-gray-600 shadow-sm"><Phone size={14} className="text-emerald-500"/>{selectedUserStats.phone_number}</span>}
-                                {selectedUserStats.instagram_username && <span className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-xl border text-sm text-gray-600 shadow-sm"><Instagram size={14} className="text-rose-500"/>{selectedUserStats.instagram_username}</span>}
-                                {selectedUserStats.telegram_id && <span className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-xl border text-sm text-gray-600 shadow-sm"><Send size={14} className="text-sky-500"/>{selectedUserStats.telegram_id}</span>}
-                                {selectedUserStats.website && <span className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-xl border text-sm text-gray-600 shadow-sm"><Globe size={14} className="text-indigo-500"/>{selectedUserStats.website}</span>}
-                            </div>
+                            <h2 className="text-2xl font-black text-gray-800 mb-1">{selectedUserStats.username}</h2>
+                            {selectedUserStats.bio && <p className="text-gray-500 text-sm max-w-lg">{selectedUserStats.bio}</p>}
+                            <button onClick={() => openModal('profile', selectedUserStats)} className="text-blue-600 bg-blue-100 hover:bg-blue-200 px-4 py-2 rounded-xl text-xs font-bold transition mt-3 flex gap-2 items-center">
+                                <Edit size={14}/> ویرایش پروفایل
+                            </button>
                         </div>
                     </div>
-
-                    {/* Quick Actions */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <button onClick={() => openModal('issue', { username: selectedUserStats.username })} className="bg-white p-4 rounded-2xl border shadow-sm hover:shadow-md hover:border-blue-300 transition flex flex-col items-center gap-2 group">
-                            <div className="p-2 bg-blue-50 text-blue-600 rounded-full group-hover:scale-110 transition"><AlertTriangle size={20}/></div>
-                            <span className="text-xs font-bold text-gray-600">ثبت مشکل</span>
-                        </button>
-                         <button onClick={() => openModal('frozen', { username: selectedUserStats.username })} className="bg-white p-4 rounded-2xl border shadow-sm hover:shadow-md hover:border-blue-300 transition flex flex-col items-center gap-2 group">
-                            <div className="p-2 bg-sky-50 text-sky-600 rounded-full group-hover:scale-110 transition"><Snowflake size={20}/></div>
-                            <span className="text-xs font-bold text-gray-600">ثبت فریز</span>
-                        </button>
-                         <button onClick={() => openModal('feature', { username: selectedUserStats.username })} className="bg-white p-4 rounded-2xl border shadow-sm hover:shadow-md hover:border-blue-300 transition flex flex-col items-center gap-2 group">
-                            <div className="p-2 bg-purple-50 text-purple-600 rounded-full group-hover:scale-110 transition"><Lightbulb size={20}/></div>
-                            <span className="text-xs font-bold text-gray-600">ثبت فیچر</span>
-                        </button>
-                         <button onClick={() => openModal('refund', { username: selectedUserStats.username })} className="bg-white p-4 rounded-2xl border shadow-sm hover:shadow-md hover:border-blue-300 transition flex flex-col items-center gap-2 group">
-                            <div className="p-2 bg-rose-50 text-rose-600 rounded-full group-hover:scale-110 transition"><CreditCard size={20}/></div>
-                            <span className="text-xs font-bold text-gray-600">ثبت بازگشت وجه</span>
-                        </button>
-                    </div>
-
-                    {/* Timeline */}
                     <div className="bg-white/80 backdrop-blur p-6 rounded-3xl shadow-sm border border-white">
                         <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><History size={18} className="text-gray-500"/> تاریخچه فعالیت‌ها</h3>
                         {userRecords.length > 0 ? (
-                            <div className="space-y-6 relative before:absolute before:right-6 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                            <div className="space-y-4">
                                 {userRecords.map((r, i) => (
-                                    <div key={i} className="relative pr-10">
-                                        <div className={`absolute right-4 top-1 w-4 h-4 rounded-full border-2 border-white shadow-sm z-10 ${
-                                            r.src === 'issue' ? 'bg-amber-400' : 
-                                            r.src === 'frozen' ? 'bg-blue-400' : 
-                                            r.src === 'feature' ? 'bg-purple-400' : 'bg-rose-400'
-                                        }`}></div>
-                                        <div className="bg-slate-50 border rounded-2xl p-4 hover:bg-white hover:shadow-md transition group">
-                                            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                                                <div className="flex items-center gap-2 text-xs text-gray-500">
-                                                    <span className="font-mono bg-white px-2 py-0.5 rounded border">{formatDate(r.date)}</span>
-                                                    <span className={`px-2 py-0.5 rounded-full border text-[10px] ${
-                                                        r.src === 'issue' ? 'bg-amber-50 text-amber-700 border-amber-100' : 
-                                                        r.src === 'frozen' ? 'bg-blue-50 text-blue-700 border-blue-100' : 
-                                                        r.src === 'feature' ? 'bg-purple-50 text-purple-700 border-purple-100' : 
-                                                        'bg-rose-50 text-rose-700 border-rose-100'
-                                                    }`}>
-                                                        {r.src === 'issue' ? 'مشکل فنی' : r.src === 'frozen' ? 'اکانت فریز' : r.src === 'feature' ? 'درخواست فیچر' : 'بازگشت وجه'}
-                                                    </span>
-                                                </div>
-                                                <button onClick={() => openModal(r.src, r)} className="text-xs px-3 py-1.5 rounded-xl border bg-white hover:bg-blue-600 hover:text-white transition opacity-0 group-hover:opacity-100">ویرایش</button>
-                                            </div>
-                                            <div className="font-bold text-sm text-gray-800 mb-2">{r.desc_text || r.reason || r.title}</div>
-                                            <div className="flex items-center gap-2">
-                                                <span className={`text-[10px] px-2 py-0.5 rounded border ${
-                                                    ['حل‌شده', 'انجام شد', 'رفع شد'].includes(r.status) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-white text-gray-500'
-                                                }`}>
-                                                    وضعیت: {r.status || r.action || 'نامشخص'}
-                                                </span>
-                                            </div>
+                                    <div key={i} className="bg-slate-50 border rounded-2xl p-4 hover:bg-white hover:shadow-md transition">
+                                        <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+                                            <span className="font-mono bg-white px-2 py-0.5 rounded border">{formatDate(r.date)}</span>
+                                            <span className="px-2 py-0.5 rounded-full border bg-white text-gray-700">{r.src}</span>
                                         </div>
+                                        <div className="font-bold text-sm text-gray-800 mb-2">{r.desc_text || r.reason || r.title}</div>
+                                        <span className="text-[10px] px-2 py-0.5 rounded border bg-white">وضعیت: {r.status || r.action || 'نامشخص'}</span>
                                     </div>
                                 ))}
                             </div>
                         ) : (
-                            <div className="text-center text-gray-400 py-10 flex flex-col items-center gap-2">
-                                <History size={40} className="opacity-20"/>
-                                <span className="text-sm">هیچ سابقه‌ای یافت نشد.</span>
-                            </div>
+                            <div className="text-center text-gray-400 py-10">هیچ سابقه‌ای یافت نشد.</div>
                         )}
                     </div>
                 </div>
-            ) : (
-                search && (
-                    <div className="text-center py-20">
-                        <User size={64} className="mx-auto text-gray-200 mb-4"/>
-                        <p className="text-gray-400 text-sm">کاربری با این مشخصات یافت نشد.</p>
-                        <button onClick={() => openModal('profile', { username: search })} className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-200 hover:scale-105 transition">
-                            ساخت پروفایل جدید برای "{search}"
-                        </button>
-                    </div>
-                )
-            )}
+            ) : null}
         </div>
     );
 };
@@ -715,11 +663,9 @@ const AIAnalysisTab = ({ issues, onboardings, navigateToProfile }) => {
     return (
         <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-8 rounded-3xl text-white shadow-lg relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
                 <div className="relative z-10">
                     <h2 className="text-2xl font-black mb-2 flex items-center gap-2"><Sparkles className="text-amber-300"/> دستیار هوشمند</h2>
-                    <p className="text-indigo-100 text-sm mb-6">تحلیل عمیق داده‌ها و جستجوی معنایی در گزارشات کاربران</p>
-                    
+                    <p className="text-indigo-100 text-sm mb-6">تحلیل عمیق داده‌ها و جستجوی معنایی</p>
                     <div className="flex gap-3">
                         <button onClick={handleGeneralAnalysis} disabled={loading} className="bg-white text-indigo-700 px-6 py-3 rounded-xl font-bold hover:bg-indigo-50 transition shadow-lg flex items-center gap-2">
                             {loading ? <Loader2 size={18} className="animate-spin"/> : <Activity size={18}/>}
@@ -765,7 +711,6 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
-  const [isConnected, setIsConnected] = useState(false);
   const [issues, setIssues] = useState([]);
   const [frozen, setFrozen] = useState([]);
   const [features, setFeatures] = useState([]);
@@ -777,11 +722,8 @@ export default function App() {
   const [formData, setFormData] = useState(INITIAL_FORM_DATA);
   const [editingId, setEditingId] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
-  
-  // View Modes
-  const [issueViewMode, setIssueViewMode] = useState('table'); // 'table' | 'kanban'
+  const [issueViewMode, setIssueViewMode] = useState('table');
   const [featureViewMode, setFeatureViewMode] = useState('table');
-
   const [isAuthed, setIsAuthed] = useState(() => {
     if (typeof window === 'undefined') return false;
     if (!appPassword) return true;
@@ -817,7 +759,6 @@ export default function App() {
 
   useEffect(() => {
     if (!supabase) return;
-    setIsConnected(true);
     const fetchAll = async () => {
       const { data: d1 } = await supabase.from('issues').select('*').order('id', { ascending: false });
       if (d1) setIssues(d1);
@@ -872,13 +813,11 @@ export default function App() {
   const churnRisks = useMemo(() => {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
     const recentIssues = issues.filter(i => {
         if (!i.created_at) return false;
         const date = parsePersianDate(i.created_at);
         return date && date >= thirtyDaysAgo;
     });
-
     const userCounts = {};
     recentIssues.forEach(i => {
       if (!userCounts[i.username]) userCounts[i.username] = { count: 0, issues: [] };
@@ -896,8 +835,7 @@ export default function App() {
     1. summary: خلاصه مشکلات کاربر.
     2. anger_score: نمره خطر ریزش (۱ تا ۱۰).
     3. root_cause: علت اصلی.
-    4. message: پیام پیشنهادی برای دلجویی.
-    به وضعیت حل شدن یا نشدن مشکلات توجه کن.`;
+    4. message: پیام پیشنهادی برای دلجویی.`;
     const res = await callVardastAI(prompt, true);
     setAiLoading(false);
     if (res) {
@@ -909,7 +847,6 @@ export default function App() {
   const chartData = useMemo(() => {
     const acc = {};
     issues.forEach((i) => { 
-        // Use ISO date if available, else simple string
         const d = i.created_at ? (i.created_at.includes('T') ? i.created_at.split('T')[0] : i.created_at.split(' ')[0]) : 'نامشخص'; 
         acc[d] = (acc[d] || 0) + 1; 
     });
@@ -919,9 +856,7 @@ export default function App() {
   const handleSave = async (e) => {
     e.preventDefault();
     const isEdit = !!editingId;
-    // Save ISO string for new items to enable SLA logic
     const createdTimestamp = formData.date ? new Date(formData.date).toISOString() : new Date().toISOString(); 
-    
     let table = '';
     const commonFields = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, flag: formData.flag || null };
     let payload = {};
@@ -944,14 +879,7 @@ export default function App() {
       if (!isEdit) payload.requested_at = createdTimestamp;
     } else if (modalType === 'profile') {
       table = 'profiles';
-      payload = { 
-        username: formData.username, 
-        phone_number: formData.phone_number, 
-        instagram_username: formData.instagram_username,
-        telegram_id: formData.telegram_id,
-        website: formData.website,
-        bio: formData.bio
-      };
+      payload = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, telegram_id: formData.telegram_id, website: formData.website, bio: formData.bio };
       if (!isEdit) payload.created_at = createdTimestamp;
     } else if (modalType === 'onboarding') {
       table = 'onboardings';
@@ -976,9 +904,8 @@ export default function App() {
     if (!supabase) return alert('دیتابیس متصل نیست.');
     let error = null;
     if (isEdit) {
-      // Audit log simulation
       if (['issues', 'features'].includes(table)) {
-         payload.last_updated_by = 'Admin'; // Mock
+         payload.last_updated_by = 'Admin';
          payload.last_updated_at = new Date().toISOString();
       }
       const res = await supabase.from(table).update(payload).eq('id', editingId);
@@ -1002,37 +929,24 @@ export default function App() {
 
   const handleStatusChange = async (id, newStatus, table) => {
     if (!supabase) return;
-    const payload = { 
-        status: newStatus,
-        last_updated_by: 'Admin',
-        last_updated_at: new Date().toISOString()
-    };
+    const payload = { status: newStatus, last_updated_by: 'Admin', last_updated_at: new Date().toISOString() };
     const { error } = await supabase.from(table).update(payload).eq('id', id);
     if (!error) {
-      if (table === 'issues') {
-        setIssues(prev => prev.map(i => i.id.toString() === id ? { ...i, ...payload } : i));
-      } else if (table === 'features') {
-        setFeatures(prev => prev.map(f => f.id.toString() === id ? { ...f, ...payload } : f));
-      }
+      if (table === 'issues') setIssues(prev => prev.map(i => i.id.toString() === id ? { ...i, ...payload } : i));
+      else if (table === 'features') setFeatures(prev => prev.map(f => f.id.toString() === id ? { ...f, ...payload } : f));
     }
   };
 
   const openModal = (t, record = null) => {
     setModalType(t);
-    if (record) { 
-      setEditingId(record.id); 
-      setFormData({ ...INITIAL_FORM_DATA, ...record }); 
-    } else { 
-      setEditingId(null); 
-      setFormData({ ...INITIAL_FORM_DATA }); 
-    }
+    if (record) { setEditingId(record.id); setFormData({ ...INITIAL_FORM_DATA, ...record }); } 
+    else { setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); }
     setIsModalOpen(true);
   };
   
   if (appPassword && !isAuthed) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-l from-slate-100 to-white p-4" dir="rtl">
-        {/* Login form code */}
         <div className="bg-white shadow-2xl rounded-3xl p-8 w-full max-w-md border">
           <h1 className="text-xl font-extrabold mb-4 text-center text-slate-800">ورود به داشبورد پشتیبانی</h1>
           <form onSubmit={handleLogin} className="space-y-4">
@@ -1047,11 +961,9 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex bg-[#F3F4F6] overflow-hidden" dir="rtl">
-      {/* Background Blobs */}
       <div className="fixed top-0 left-0 w-96 h-96 bg-blue-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob pointer-events-none"></div>
       <div className="fixed top-0 right-0 w-96 h-96 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000 pointer-events-none"></div>
       
-      {/* Sidebar */}
       <aside className={`${isSidebarOpen ? 'w-64' : 'w-0 md:w-20'} h-full bg-white/90 backdrop-blur-xl border-l border-gray-200 flex flex-col transition-all duration-300 overflow-hidden fixed md:static inset-y-0 right-0 z-50`}>
         <div className="p-4 flex items-center justify-between border-b border-gray-100 flex-shrink-0">
           {isSidebarOpen && <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-l from-blue-600 to-purple-600 text-xl">وردست</span>}
@@ -1076,7 +988,6 @@ export default function App() {
         </nav>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 h-full overflow-y-auto overflow-x-hidden">
         <div className="px-4 sm:px-8 py-6 min-h-full">
           <header className="flex items-center justify-between mb-8">
@@ -1085,13 +996,12 @@ export default function App() {
               <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">داشبورد پشتیبانی</h1>
             </div>
             <div className="text-xs text-slate-500 bg-white/60 px-3 py-1.5 rounded-full border">
-              امروز {new Date().toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })} - {new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
+              امروز {new Date().toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })}
             </div>
           </header>
 
           {activeTab === 'dashboard' && (
             <section className="space-y-6">
-              {/* Stats Cards */}
               <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
                 {[
                   { title: 'نرخ حل مشکلات', value: `%${analytics.solvedRatio}`, color: 'from-emerald-500 to-teal-400', icon: CheckCircle2 },
@@ -1108,7 +1018,6 @@ export default function App() {
               </div>
               
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                {/* Churn Risk */}
                 <div className="xl:col-span-1 bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-red-100 flex flex-col h-80">
                   <h4 className="font-bold text-gray-700 text-sm mb-4 flex items-center gap-2">
                     <span className="w-6 h-6 rounded-full bg-red-100 text-red-500 flex items-center justify-center"><AlertCircle size={14}/></span>
@@ -1138,7 +1047,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Analytics Charts */}
                 <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 h-80">
                     <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col">
                       <h4 className="font-bold text-gray-700 text-sm mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-blue-500"/>روند ثبت مشکلات</h4>
@@ -1265,7 +1173,6 @@ export default function App() {
             <AIAnalysisTab issues={issues} onboardings={onboardings} navigateToProfile={navigateToProfile} />
           )}
 
-          {/* Simple Tables for Frozen and Refunds */}
           {['frozen', 'refunds'].includes(activeTab) && (
             <div className="bg-white rounded-2xl border overflow-hidden p-6">
                 <div className="flex justify-between mb-4">
@@ -1290,7 +1197,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center backdrop-blur-sm z-[60] p-4">
           <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
@@ -1301,7 +1207,6 @@ export default function App() {
               <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-red-500"><X size={20} /></button>
             </div>
             <form onSubmit={handleSave} className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
-                {/* Onboarding Specific Fields */}
                 {modalType === 'onboarding' ? (
                     <div className="space-y-4">
                         <UserSearchInput 
@@ -1318,7 +1223,6 @@ export default function App() {
 
                         <select value={formData.has_website || 'false'} onChange={(e) => setFormData({...formData, has_website: e.target.value})} className="border p-3 rounded-xl text-sm w-full"><option value="false">وبسایت ندارد</option><option value="true">وبسایت دارد</option></select>
 
-                        {/* Section 1: Call */}
                         <div className="bg-slate-50 p-3 rounded-xl space-y-2 border">
                             <h4 className="font-bold text-gray-700 text-xs">۱. تماس اولیه</h4>
                             <div className="grid grid-cols-2 gap-2">
@@ -1328,14 +1232,12 @@ export default function App() {
                             <textarea placeholder="خلاصه مکالمه..." rows="2" value={formData.conversation_summary || ''} onChange={(e) => setFormData({...formData, conversation_summary: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/>
                         </div>
 
-                        {/* Section 2: Meeting */}
                         <div className="bg-slate-50 p-3 rounded-xl space-y-2 border">
                             <h4 className="font-bold text-gray-700 text-xs">۲. جلسه آنلاین</h4>
                             <input type="text" placeholder="تاریخ جلسه" value={formData.meeting_date || ''} onChange={(e) => setFormData({...formData, meeting_date: e.target.value})} className="border p-2 rounded-lg text-xs w-full"/>
                             <textarea placeholder="توضیحات جلسه..." rows="2" value={formData.meeting_note || ''} onChange={(e) => setFormData({...formData, meeting_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/>
                         </div>
 
-                        {/* Section 3: Followup */}
                         <div className="bg-slate-50 p-3 rounded-xl space-y-2 border">
                             <h4 className="font-bold text-gray-700 text-xs">۳. پیگیری بعدی</h4>
                             <input type="text" placeholder="تاریخ فالوآپ" value={formData.followup_date || ''} onChange={(e) => setFormData({...formData, followup_date: e.target.value})} className="border p-2 rounded-lg text-xs w-full"/>
@@ -1343,7 +1245,6 @@ export default function App() {
                         </div>
                     </div>
                 ) : (
-                    /* Default Fields for other types */
                     <>
                         <div className="space-y-1">
                             <label className="text-xs text-gray-500 font-medium">نام کاربری</label>
@@ -1355,12 +1256,10 @@ export default function App() {
                             />
                         </div>
                         
-                        {/* Date field for reports (not profile, not onboarding) */}
                         {modalType !== 'profile' && (
                              <div className="space-y-1"><label className="text-xs text-gray-500 font-medium">تاریخ ثبت</label><input type="date" value={formData.date || ''} onChange={(e) => setFormData({...formData, date: e.target.value})} className="w-full border p-3 rounded-xl text-sm" /></div>
                         )}
 
-                        {/* Common inputs */}
                         <div className="grid grid-cols-2 gap-3">
                             <input placeholder="شماره تماس" value={formData.phone_number || ''} onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })} className="border p-3 rounded-xl text-sm w-full" />
                             <input placeholder="اینستاگرام" value={formData.instagram_username || ''} onChange={(e) => setFormData({ ...formData, instagram_username: e.target.value })} className="border p-3 rounded-xl text-sm w-full" />
@@ -1376,7 +1275,6 @@ export default function App() {
                             </>
                         )}
                         
-                        {/* Issue Specific */}
                         {modalType === 'issue' && (
                             <>
                                 <select value={formData.status || 'باز'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full"><option value="باز">باز</option><option value="در حال بررسی">در حال بررسی</option><option value="حل‌شده">حل‌شده</option></select>
@@ -1386,7 +1284,6 @@ export default function App() {
                             </>
                         )}
                         
-                        {/* Feature Specific */}
                         {modalType === 'feature' && (
                             <>
                                 <select value={formData.status || 'بررسی نشده'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full"><option value="بررسی نشده">بررسی نشده</option><option value="در تحلیل">در تحلیل</option><option value="در توسعه">در توسعه</option><option value="انجام شد">انجام شد</option></select>
@@ -1395,7 +1292,6 @@ export default function App() {
                             </>
                         )}
 
-                        {/* Frozen & Refund simple forms */}
                         {(modalType === 'frozen' || modalType === 'refund') && (
                              <textarea rows="3" placeholder="توضیحات..." value={formData.desc_text || formData.reason || ''} onChange={(e) => setFormData({ ...formData, [modalType === 'refund' ? 'reason' : 'desc_text']: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
                         )}
