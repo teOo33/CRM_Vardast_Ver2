@@ -187,8 +187,16 @@ const parsePersianDate = (dateStr) => {
 
 // یک تابع کمکی که فقط اولین بار، channel_id مربوط به "Dashboard AI" را از API می‌گیرد
 const ensureVardastChannelId = async () => {
+  // اگر قبلاً ست شده، همون رو برگردون
   if (vardastChannelId) return vardastChannelId;
 
+  // ✅ اگر به صورت مستقیم channel_id رو هاردکد کرده‌ای، از همون استفاده کن
+  if (VARDAST_CHANNEL_ID) {
+    vardastChannelId = VARDAST_CHANNEL_ID;
+    return vardastChannelId;
+  }
+
+  // اگر channel_id ندادی، میریم از API لیست کانال‌ها رو می‌گیریم
   if (!VARDAST_API_KEY) {
     alert('X-API-Key وردست تنظیم نشده است.');
     return null;
@@ -211,63 +219,36 @@ const ensureVardastChannelId = async () => {
       return null;
     }
 
-    const ch = items.find((c) => c.name === VARDAST_CHANNEL_NAME);
+    // 👀 برای دیباگ: همه کانال‌ها رو تو کنسول ببین
+    console.log(
+      'Vardast channels:',
+      items.map((c) => ({ id: c.id, name: c.name, platform: c.platform }))
+    );
 
-    if (!ch) {
-      alert(`کانالی با نام "${VARDAST_CHANNEL_NAME}" در وردست پیدا نشد.`);
-      return null;
+    // سعی می‌کنیم با اسم کانال پیدا کنیم (اگر بعداً خواستی اسم رو درست کنی)
+    const chByName = items.find((c) => c.name === VARDAST_CHANNEL_NAME);
+
+    if (chByName) {
+      vardastChannelId = chByName.id;
+      return vardastChannelId;
     }
 
-    vardastChannelId = ch.id;
-    return vardastChannelId;
+    // اگر کانال فقط یکی است، همونو استفاده می‌کنیم
+    if (items.length === 1) {
+      vardastChannelId = items[0].id;
+      alert(`هیچ کانالی به نام "${VARDAST_CHANNEL_NAME}" پیدا نشد، ولی چون فقط یک کانال وجود داشت از "${items[0].name}" استفاده شد.`);
+      return vardastChannelId;
+    }
+
+    // اگر چندتا کانال هست و اسمی که دادی پیدا نشد:
+    alert(
+      `کانالی با نام "${VARDAST_CHANNEL_NAME}" در وردست پیدا نشد.\n` +
+      'لیست کانال‌های موجود را در کنسول (DevTools) می‌توانی ببینی و نام درست را در VARDAST_CHANNEL_NAME یا channel_id درست را در VARDAST_CHANNEL_ID قرار بده.'
+    );
+    return null;
   } catch (error) {
     console.error('Error fetching Vardast channels:', error);
     alert('خطا در گرفتن لیست کانال‌های وردست.');
-    return null;
-  }
-};
-
-// این تابع قبلاً به جمینای وصل بود؛ الان فقط اسمش را نگه داشتیم ولی پشت‌صحنه به وردست وصل است
-const callGeminiAI = async (prompt, isJson = false) => {
-  const channelId = await ensureVardastChannelId();
-  if (!channelId) return null;
-
-  if (!VARDAST_CONTACT_ID) {
-    alert('contact_id وردست تنظیم نشده است.');
-    return null;
-  }
-
-  try {
-    const response = await fetch(
-      `${VARDAST_BASE_URL}/messenger/api/chat/public/process`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': VARDAST_API_KEY,
-        },
-        body: JSON.stringify({
-          message: prompt,
-          channel_id: channelId,
-          contact_id: VARDAST_CONTACT_ID,
-          assistant_id: null, // اگر خواستی دستیارت را جدا تعریف کنی، اینجا id آن را بگذار
-        }),
-      }
-    );
-
-    const data = await response.json();
-
-    if (data.status === 'success') {
-      // پاسخ هوش مصنوعی وردست در data.response است
-      return data.response;
-    } else {
-      console.error('Vardast AI Error:', data.error || data);
-      alert('خطا در پاسخ وردست: ' + (data.error || 'خطای نامشخص'));
-      return null;
-    }
-  } catch (error) {
-    console.error('Vardast AI Error:', error);
-    alert('خطای شبکه در ارتباط با وردست');
     return null;
   }
 };
