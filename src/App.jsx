@@ -56,14 +56,13 @@ import {
   CartesianGrid
 } from 'recharts';
 
-// --- تنظیمات اتصال ---
+// --- تنظیمات محیطی و API ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
 
-// --- تنظیمات API وردست (جایگزین شده) ---
+// --- تنظیمات API وردست (Vardast) ---
 const VARDAST_API_KEY = 'DVmo0Hi2NHQE3kLx-Q7V3NWZBophr_kKDlTXrj7bdtQ';
-const VARDAST_CHANNEL_ID = '78e1016c-493c-4601-9f26-88974c277b3d';
 const VARDAST_BASE_URL = 'https://apigw.vardast.chat/uaa/public';
 
 const INITIAL_FORM_DATA = {
@@ -77,6 +76,7 @@ const INITIAL_FORM_DATA = {
   has_website: false, progress: 0, initial_call_status: '', conversation_summary: '', call_date: '', meeting_date: '', meeting_note: '', followup_date: '', followup_note: ''
 };
 
+// --- استایل‌دهی (Tailwind Injection) ---
 const useTailwind = () => {
   useEffect(() => {
     if (!document.getElementById('tailwind-cdn')) {
@@ -122,7 +122,7 @@ try {
   console.error('Supabase init error:', e);
 }
 
-// --- Helpers ---
+// --- توابع کمکی (Helpers) ---
 const formatDate = (dateStr) => {
   if (!dateStr) return '-';
   if (dateStr.includes('T')) {
@@ -164,9 +164,41 @@ const parsePersianDate = (dateStr) => {
   return null;
 };
 
-// --- تابع جدید اتصال به هوش مصنوعی وردست ---
+// --- منطق هوش مصنوعی (Vardast AI Logic) ---
 
-// تولید شناسه یکتا برای ادمین جهت حفظ تاریخچه چت در سرور وردست
+// متغیر برای کش کردن ID کانال
+let cachedChannelId = null;
+
+// 1. دریافت Channel ID از API
+const getChannelId = async () => {
+  if (cachedChannelId) return cachedChannelId;
+
+  try {
+    const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/channel/`, {
+      method: 'GET',
+      headers: {
+        'X-API-Key': VARDAST_API_KEY,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await response.json();
+
+    if (data.items && data.items.length > 0) {
+      // اولین کانال موجود را برمی‌داریم
+      cachedChannelId = data.items[0].id;
+      return cachedChannelId;
+    } else {
+      console.error('Vardast: No channels found.');
+      return null;
+    }
+  } catch (error) {
+    console.error('Vardast: Error fetching Channel ID:', error);
+    return null;
+  }
+};
+
+// 2. تولید/دریافت شناسه ادمین
 const generateUUID = () => {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
         var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
@@ -177,12 +209,18 @@ const generateUUID = () => {
 const ADMIN_CONTACT_ID = localStorage.getItem('vardast_admin_id') || generateUUID();
 if (!localStorage.getItem('vardast_admin_id')) localStorage.setItem('vardast_admin_id', ADMIN_CONTACT_ID);
 
+// 3. تابع اصلی ارسال پیام
 const callAI = async (prompt, isJson = false) => {
   if (!VARDAST_API_KEY) return alert('کلید API وردست وارد نشده است.');
   
+  // مرحله مهم: دریافت شناسه کانال
+  const channelId = await getChannelId();
+  if (!channelId) {
+    return alert('خطا: قادر به دریافت شناسه کانال از سرور وردست نیستیم. لطفا کانال‌های خود را چک کنید.');
+  }
+
   try {
     let finalPrompt = prompt;
-    // اگر فرمت جیسون نیاز است، صریحا درخواست می‌کنیم
     if (isJson) {
         finalPrompt += "\n\n(لطفا خروجی را فقط و فقط به صورت یک آبجکت JSON معتبر برگردان. هیچ متن اضافه، Markdown یا توضیحی ننویس.)";
     }
@@ -197,7 +235,7 @@ const callAI = async (prompt, isJson = false) => {
         },
         body: JSON.stringify({
           message: finalPrompt,
-          channel_id: VARDAST_CHANNEL_ID,
+          channel_id: channelId, // استفاده از ID داینامیک
           contact_id: ADMIN_CONTACT_ID,
           assistant_id: null 
         }),
@@ -213,7 +251,6 @@ const callAI = async (prompt, isJson = false) => {
 
     let text = data.response;
 
-    // تمیزکاری کد بلاک‌های مارک‌داون اگر جیسون درخواست شده بود
     if (isJson && text) {
        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
     }
@@ -448,47 +485,6 @@ const OnboardingTab = ({ onboardings, openModal, navigateToProfile }) => {
   );
 };
 
-const HeatmapChart = ({ issues }) => {
-  const data = useMemo(() => {
-    // Initialize 7 days x 24 hours grid
-    const grid = Array(7).fill(0).map(() => Array(24).fill(0));
-    issues.forEach(i => {
-      if (!i.created_at || !i.created_at.includes('T')) return;
-      const date = new Date(i.created_at);
-      const day = date.getDay(); // 0=Sun
-      const hour = date.getHours();
-      grid[day][hour]++;
-    });
-    
-    // Flatten for ScatterChart: { x: hour, y: day, z: count }
-    const flatData = [];
-    const days = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه', 'شنبه'];
-    grid.forEach((hours, dayIdx) => {
-      hours.forEach((count, hourIdx) => {
-        if (count > 0) flatData.push({ day: days[dayIdx], hour: hourIdx, count, dayIdx });
-      });
-    });
-    return flatData;
-  }, [issues]);
-
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis type="number" dataKey="hour" name="ساعت" unit="h" domain={[0, 23]} tickCount={24} />
-        <YAxis type="category" dataKey="day" name="روز" allowDuplicatedCategory={false} />
-        <ZAxis type="number" dataKey="count" range={[50, 500]} name="تعداد" />
-        <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-        <Scatter name="Issues" data={data} fill="#8884d8">
-          {data.map((entry, index) => (
-            <Cell key={`cell-${index}`} fill={`rgba(136, 132, 216, ${Math.min(entry.count / 5 + 0.2, 1)})`} />
-          ))}
-        </Scatter>
-      </ScatterChart>
-    </ResponsiveContainer>
-  );
-};
-
 // Simple Cohort Analysis (Retention based on Registration Month)
 const CohortChart = ({ onboardings }) => {
   const data = useMemo(() => {
@@ -708,7 +704,6 @@ const AIAnalysisTab = ({ issues, onboardings, navigateToProfile }) => {
     const [aiResult, setAiResult] = useState('');
     const [loading, setLoading] = useState(false);
 
-    // --- Updated function calls to callAI ---
     const handleOnboardingAnalysis = async () => {
         setLoading(true);
         const prompt = `تحلیل روند آنبوردینگ کاربران: ${JSON.stringify(onboardings.slice(0, 30).map(u => ({ progress: u.progress, note: u.meeting_note || u.followup_note })))}. لطفا موانع اصلی پیشرفت و پیشنهادات برای افزایش نرخ تکمیل پروفایل را بگو.`;
@@ -921,7 +916,7 @@ export default function App() {
     4. message: پیام پیشنهادی برای دلجویی.
     به وضعیت حل شدن یا نشدن مشکلات توجه کن.`;
     
-    // --- Updated to use callAI ---
+    // ارسال درخواست به هوش مصنوعی با فلگ جیسون
     const res = await callAI(prompt, true);
     
     setAiLoading(false);
