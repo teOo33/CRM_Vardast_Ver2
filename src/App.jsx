@@ -57,10 +57,10 @@ const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
 
 // --- تنظیمات وردست (Vardast) ---
 const VARDAST_API_KEY = "b9v8WdDYu4Qr-BQw2AJUCkJQZFwodrIBfb6et_tmF14";
-const VARDAST_CHANNEL_ID = "2da7da68-ce0e-4f6a-a5ed-b147b14eae26";
 const VARDAST_BASE_URL = "https://apigw.vardast.chat/uaa/public";
 
-// متغیر کش برای جلوگیری از درخواست‌های تکراری
+// متغیرهای کش برای جلوگیری از درخواست‌های تکراری
+let cachedChannelId = null;
 let cachedContactId = null;
 
 const INITIAL_FORM_DATA = {
@@ -159,40 +159,68 @@ const parsePersianDate = (dateStr) => {
   return null;
 };
 
-// --- Vardast Logic (Fixed for Internal Dashboard) ---
+// --- Vardast Logic (Corrected & Automated) ---
 
-// تابع تولید UUID تصادفی برای ساخت هویت ادمین داشبورد
-const generateUUID = () => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
-
-// تابع دریافت یا ساخت شناسه تماس برای داشبورد
+// ۱. تولید یا دریافت شناسه ادمین داشبورد (برای حل خطای Contact not found)
 const getDashboardContactId = () => {
-  // ۱. اول چک میکنیم آیا قبلا آیدی ساختیم و در مرورگر ذخیره کردیم؟
   let savedId = localStorage.getItem('vardast_dashboard_contact_id');
-  
-  // ۲. اگر نبود، یکی میسازیم و ذخیره میکنیم (این میشه هویت ثابت این داشبورد)
   if (!savedId) {
-    savedId = generateUUID();
+    // تولید UUID استاندارد نسخه ۴ (ساده شده)
+    savedId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
     localStorage.setItem('vardast_dashboard_contact_id', savedId);
     console.log("New Dashboard Admin ID Generated:", savedId);
-  } else {
-    console.log("Using Existing Dashboard ID:", savedId);
   }
-  
   return savedId;
 };
 
+// ۲. یافتن شناسه کانال واقعی (برای حل خطای Channel ID نامعتبر)
+const fetchRealChannelId = async () => {
+  try {
+    const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/channel/`, {
+      method: 'GET',
+      headers: { 
+        'X-API-Key': VARDAST_API_KEY, 
+        'Content-Type': 'application/json' 
+      }
+    });
+    const data = await response.json();
+    
+    // اگر کانالی پیدا شد، آیدی اولی را برگردان
+    if (data.items && data.items.length > 0) {
+      console.log("✅ Connected to Channel:", data.items[0].name);
+      return data.items[0].id;
+    } else {
+      console.error("❌ No channels found in this account.");
+      return null;
+    }
+  } catch (error) {
+    console.error("❌ Error fetching channels:", error);
+    return null;
+  }
+};
+
+// ۳. تابع اصلی فراخوانی هوش مصنوعی
 const callVardastAI = async (prompt, isJson = false) => {
   if (!VARDAST_API_KEY) return alert('کلید API وردست وارد نشده است.');
   
   try {
-    // دریافت آیدی ثابت ادمین (دیگر نیازی به فچ کردن از سرور نیست)
-    const contactId = getDashboardContactId();
+    // الف: پیدا کردن کانال (فقط بار اول)
+    if (!cachedChannelId) {
+      cachedChannelId = await fetchRealChannelId();
+      if (!cachedChannelId) {
+        return "خطا: هیچ کانالی در حساب وردست شما یافت نشد. لطفا در پنل وردست یک کانال بسازید.";
+      }
+    }
 
+    // ب: گرفتن آیدی ادمین
+    if (!cachedContactId) {
+      cachedContactId = getDashboardContactId();
+    }
+
+    // ج: ارسال پیام
     const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/chat/public/process`, {
       method: 'POST',
       headers: { 
@@ -201,15 +229,16 @@ const callVardastAI = async (prompt, isJson = false) => {
       },
       body: JSON.stringify({
         message: prompt,
-        channel_id: VARDAST_CHANNEL_ID,
-        contact_id: contactId, // ارسال آیدی تولید شده توسط خودمان
+        channel_id: cachedChannelId,
+        contact_id: cachedContactId,
         assistant_id: null 
       }),
     });
 
+    // د: مدیریت خطاهای خاص
     if (response.status === 422) {
-       console.error("Vardast 422 Error. Checking params:", { VARDAST_CHANNEL_ID, contactId });
-       return "خطای 422: کانال یافت نشد یا فرمت آیدی نامعتبر است. لطفا Channel ID را چک کنید.";
+       console.error("Vardast 422 Error. Please check channel permissions.");
+       return "خطای ۴۲۲: ارتباط برقرار نشد (داده نامعتبر).";
     }
 
     const data = await response.json();
@@ -217,12 +246,13 @@ const callVardastAI = async (prompt, isJson = false) => {
     if (data.status === 'success' && data.response) {
       let resultText = data.response;
       if (isJson) {
+        // تمیزکاری خروجی اگر JSON خواستیم
         resultText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
       }
       return resultText;
     } else {
       console.error('Vardast Error:', data);
-      return `خطا: ${data.error || 'Unknown error'}`;
+      return `خطا در دریافت پاسخ: ${data.error || 'Unknown'}`;
     }
 
   } catch (error) {
