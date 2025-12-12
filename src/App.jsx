@@ -56,8 +56,8 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
 
 // --- تنظیمات وردست (Vardast) ---
-const VARDAST_API_KEY = "b9v8WdDYu4Qr-BQw2AJUCkJQZFwodrIBfb6et_tmF14";
-const VARDAST_CHANNEL_ID = "2da7da68-ce0e-4f6a-a5ed-b147b14eae26"; // شناسه کانالی که ساختید
+const VARDAST_API_KEY = "a5211d3f-f59a-4a0e-b604-dabef603810c";
+const VARDAST_CHANNEL_ID = "a5211d3f-f59a-4a0e-b604-dabef603810c"; // شناسه کانالی که ساختید
 const VARDAST_BASE_URL = "https://apigw.vardast.chat/uaa/public";
 
 // متغیر کش برای شناسه مخاطب
