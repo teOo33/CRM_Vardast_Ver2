@@ -57,10 +57,10 @@ const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
 
 // --- تنظیمات وردست (Vardast) ---
 const VARDAST_API_KEY = "b9v8WdDYu4Qr-BQw2AJUCkJQZFwodrIBfb6et_tmF14";
+const VARDAST_CHANNEL_ID = "2da7da68-ce0e-4f6a-a5ed-b147b14eae26"; // شناسه کانالی که ساختید
 const VARDAST_BASE_URL = "https://apigw.vardast.chat/uaa/public";
 
-// متغیرهای کش برای جلوگیری از درخواست‌های تکراری
-let cachedChannelId = null;
+// متغیر کش برای شناسه مخاطب
 let cachedContactId = null;
 
 const INITIAL_FORM_DATA = {
@@ -159,68 +159,32 @@ const parsePersianDate = (dateStr) => {
   return null;
 };
 
-// --- Vardast Logic (Corrected & Automated) ---
+// --- Vardast Logic (Simplified for Web Channel) ---
 
-// ۱. تولید یا دریافت شناسه ادمین داشبورد (برای حل خطای Contact not found)
+// تولید شناسه یکتا برای مرورگر (ادمین)
 const getDashboardContactId = () => {
   let savedId = localStorage.getItem('vardast_dashboard_contact_id');
   if (!savedId) {
-    // تولید UUID استاندارد نسخه ۴ (ساده شده)
+    // تولید UUID
     savedId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
       var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
       return v.toString(16);
     });
     localStorage.setItem('vardast_dashboard_contact_id', savedId);
-    console.log("New Dashboard Admin ID Generated:", savedId);
+    console.log("🆕 New Admin Contact ID:", savedId);
   }
   return savedId;
 };
 
-// ۲. یافتن شناسه کانال واقعی (برای حل خطای Channel ID نامعتبر)
-const fetchRealChannelId = async () => {
-  try {
-    const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/channel/`, {
-      method: 'GET',
-      headers: { 
-        'X-API-Key': VARDAST_API_KEY, 
-        'Content-Type': 'application/json' 
-      }
-    });
-    const data = await response.json();
-    
-    // اگر کانالی پیدا شد، آیدی اولی را برگردان
-    if (data.items && data.items.length > 0) {
-      console.log("✅ Connected to Channel:", data.items[0].name);
-      return data.items[0].id;
-    } else {
-      console.error("❌ No channels found in this account.");
-      return null;
-    }
-  } catch (error) {
-    console.error("❌ Error fetching channels:", error);
-    return null;
-  }
-};
-
-// ۳. تابع اصلی فراخوانی هوش مصنوعی
 const callVardastAI = async (prompt, isJson = false) => {
-  if (!VARDAST_API_KEY) return alert('کلید API وردست وارد نشده است.');
+  if (!VARDAST_API_KEY) return alert('کلید API وردست تنظیم نشده است.');
   
   try {
-    // الف: پیدا کردن کانال (فقط بار اول)
-    if (!cachedChannelId) {
-      cachedChannelId = await fetchRealChannelId();
-      if (!cachedChannelId) {
-        return "خطا: هیچ کانالی در حساب وردست شما یافت نشد. لطفا در پنل وردست یک کانال بسازید.";
-      }
-    }
-
-    // ب: گرفتن آیدی ادمین
+    // دریافت آیدی مخاطب (از حافظه مرورگر)
     if (!cachedContactId) {
       cachedContactId = getDashboardContactId();
     }
 
-    // ج: ارسال پیام
     const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/chat/public/process`, {
       method: 'POST',
       headers: { 
@@ -229,16 +193,15 @@ const callVardastAI = async (prompt, isJson = false) => {
       },
       body: JSON.stringify({
         message: prompt,
-        channel_id: cachedChannelId,
-        contact_id: cachedContactId,
-        assistant_id: null 
+        channel_id: VARDAST_CHANNEL_ID,
+        contact_id: cachedContactId, // آیدی تولید شده برای کانال وب
+        assistant_id: null // استفاده از دستیار پیش‌فرض کانال (CRM)
       }),
     });
 
-    // د: مدیریت خطاهای خاص
     if (response.status === 422) {
-       console.error("Vardast 422 Error. Please check channel permissions.");
-       return "خطای ۴۲۲: ارتباط برقرار نشد (داده نامعتبر).";
+       console.error("Vardast 422 Error. Check Channel ID.");
+       return "خطای ۴۲۲: شناسه کانال نامعتبر است یا کانال از نوع وب نیست.";
     }
 
     const data = await response.json();
@@ -246,13 +209,12 @@ const callVardastAI = async (prompt, isJson = false) => {
     if (data.status === 'success' && data.response) {
       let resultText = data.response;
       if (isJson) {
-        // تمیزکاری خروجی اگر JSON خواستیم
         resultText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
       }
       return resultText;
     } else {
       console.error('Vardast Error:', data);
-      return `خطا در دریافت پاسخ: ${data.error || 'Unknown'}`;
+      return `خطا: ${data.error || 'Unknown error'}`;
     }
 
   } catch (error) {
