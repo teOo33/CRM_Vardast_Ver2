@@ -61,9 +61,11 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
 
 // Vardast API Configuration
-const VARDAST_API_KEY = import.meta.env.VITE_VARDAST_API_KEY;
-const VARDAST_BASE_URL = import.meta.env.VITE_VARDAST_BASE_URL;
-const CHANNEL_ID = import.meta.env.VITE_VARDAST_CHANNEL_ID;
+const VARDAST_API_KEY = import.meta.env.VITE_VARDAST_API_KEY || 'DVmo0Hi2NHQE3kLx-Q7V3NWZBophr_kKDlTXrj7bdtQ';
+const VARDAST_BASE_URL = import.meta.env.VITE_VARDAST_BASE_URL || 'https://apigw.vardast.chat/uaa/public';
+const CHANNEL_ID = import.meta.env.VITE_VARDAST_CHANNEL_ID || 'a5211d3f-f59a-4a0e-b604-dabef603810c';
+
+const ADMIN_CONTACT_ID = "00000000-0000-0000-0000-000000000001";
 
 const INITIAL_FORM_DATA = {
   username: '', phone_number: '', instagram_username: '', telegram_id: '', website: '', bio: '', 
