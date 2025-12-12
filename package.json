@@ -18,8 +18,10 @@
     "jalaali-js": "^1.2.8",
     "lucide-react": "^0.560.0",
     "react": "^19.2.1",
+    "react-date-object": "^2.1.9",
     "react-dom": "^19.2.1",
     "react-is": "^19.2.2",
+    "react-multi-date-picker": "^4.5.2",
     "recharts": "^3.5.1",
     "tailwindcss": "^4.1.18",
     "vite": "^7.2.7"

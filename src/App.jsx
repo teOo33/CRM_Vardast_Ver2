@@ -1,8 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { format, differenceInHours, parseISO } from 'date-fns';
+import { format, differenceInHours, parseISO, subDays, subYears, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 import jalaali from 'jalaali-js';
+import DatePicker, { DateObject } from "react-multi-date-picker";
+import persian from "react-date-object/calendars/persian";
+import persian_fa from "react-date-object/locales/persian_fa";
 
 import {
   LayoutDashboard,
@@ -36,7 +39,10 @@ import {
   List,
   Columns,
   Clock,
-  UserCheck
+  UserCheck,
+  Calendar,
+  Filter,
+  Maximize2
 } from 'lucide-react';
 
 import {
@@ -58,8 +64,14 @@ import {
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
+
+// Vardast API Configuration
+const VARDAST_API_KEY = import.meta.env.VITE_VARDAST_API_KEY || 'DVmo0Hi2NHQE3kLx-Q7V3NWZBophr_kKDlTXrj7bdtQ';
+const VARDAST_BASE_URL = import.meta.env.VITE_VARDAST_BASE_URL || 'https://apigw.vardast.chat/uaa/public';
+const CHANNEL_ID = import.meta.env.VITE_VARDAST_CHANNEL_ID || 'a5211d3f-f59a-4a0e-b604-dabef603810c';
+
+const ADMIN_CONTACT_ID = "00000000-0000-0000-0000-000000000001";
 
 const INITIAL_FORM_DATA = {
   username: '', phone_number: '', instagram_username: '', telegram_id: '', website: '', bio: '', 
@@ -120,7 +132,6 @@ try {
 // --- Helpers ---
 const formatDate = (dateStr) => {
   if (!dateStr) return '-';
-  // Check if ISO string (contains T)
   if (dateStr.includes('T')) {
     try {
       return new Date(dateStr).toLocaleDateString('fa-IR');
@@ -128,16 +139,14 @@ const formatDate = (dateStr) => {
       return dateStr;
     }
   }
-  return dateStr; // Assume already Persian
+  return dateStr;
 };
 
 const checkSLA = (item) => {
-  if (!item.created_at || !item.created_at.includes('T')) return false; // Only check items with ISO timestamp
+  if (!item.created_at || !item.created_at.includes('T')) return false; 
   if (item.flag !== 'پیگیری فوری') return false;
-  // Map various "Open" statuses
   const openStatuses = ['باز', 'بررسی نشده'];
   if (!openStatuses.includes(item.status)) return false;
-
   const created = new Date(item.created_at);
   const diff = differenceInHours(new Date(), created);
   return diff >= 2;
@@ -146,7 +155,11 @@ const checkSLA = (item) => {
 const parsePersianDate = (dateStr) => {
   if (!dateStr) return null;
   if (dateStr.includes('T')) return new Date(dateStr);
-  const parts = dateStr.split('/');
+  
+  // Normalize string numbers to English
+  const normalized = dateStr.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+  
+  const parts = normalized.split('/');
   if (parts.length === 3) {
     const y = parseInt(parts[0], 10);
     const m = parseInt(parts[1], 10);
@@ -161,22 +174,104 @@ const parsePersianDate = (dateStr) => {
   return null;
 };
 
-const callGeminiAI = async (prompt, isJson = false) => {
-  if (!geminiApiKey) return alert('کلید هوش مصنوعی وارد نشده است.');
+const normalizeDate = (item) => {
+    // Try to find a date field
+    const dateField = item.created_at || item.frozen_at || item.requested_at || item.date;
+    if (!dateField) return null;
+    if (dateField instanceof Date) return dateField;
+    return parsePersianDate(dateField);
+};
+
+const filterDataByTime = (data, range, customRange) => {
+    if (!range && !customRange) return data;
+    
+    const now = new Date();
+    let startDate = null;
+    let endDate = now;
+
+    if (customRange && customRange.length === 2) {
+        // customRange is [DateObject, DateObject] (Jalali)
+        startDate = customRange[0].toDate();
+        endDate = customRange[1].toDate();
+        // Adjust to end of day for the end date
+        endDate.setHours(23, 59, 59, 999);
+    } else {
+        switch (range) {
+            case '1d': startDate = subDays(now, 1); break;
+            case '7d': startDate = subDays(now, 7); break;
+            case '30d': startDate = subDays(now, 30); break;
+            case '1y': startDate = subYears(now, 1); break;
+            default: return data;
+        }
+    }
+
+    return data.filter(item => {
+        const date = normalizeDate(item);
+        if (!date) return false;
+        return isAfter(date, startDate) && isBefore(date, endDate);
+    });
+};
+
+// Generate a random UUID for the session or retrieve existing
+const getContactId = () => {
+  if (typeof window === 'undefined') return "00000000-0000-0000-0000-000000000001";
+  let id = localStorage.getItem('vardast_contact_id');
+  if (!id) {
+    id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+    localStorage.setItem('vardast_contact_id', id);
+  }
+  return id;
+};
+
+const callVardastAI = async (prompt, isJson = false) => {
+  if (!VARDAST_API_KEY) return alert('کلید API وارد نشده است.');
+  
   try {
+    let finalPrompt = prompt;
+    // Removed JSON enforcement from prompt as requested, relying on assistant
+    // But specific functions might still need JSON structure if they parse it.
+    // However, the user said "Assistant has its own prompt".
+    // We will strip the "Return ONLY JSON" instruction if the user configured the assistant.
+    // BUT for safety in this code which expects JSON in some places, we might leave it implicit or minimal.
+    
+    // Check if we need JSON
+    if (isJson) {
+         finalPrompt += "\n\n(Please provide the response in JSON format)";
+    }
+
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${geminiApiKey}`,
+      `${VARDAST_BASE_URL}/messenger/api/chat/public/process`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-API-Key': VARDAST_API_KEY
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: isJson ? 'application/json' : 'text/plain' },
+          message: finalPrompt,
+          channel_id: CHANNEL_ID,
+          contact_id: getContactId()
         }),
       }
     );
+
+    if (!response.ok) {
+        const errText = await response.text();
+        console.error('API Request failed:', errText);
+        throw new Error(`API Error: ${response.status}`);
+    }
+
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text;
+    let textResponse = data.response;
+
+    if (isJson && textResponse) {
+        textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+    }
+
+    return textResponse;
   } catch (error) {
     console.error('AI Error:', error);
     return null;
@@ -210,6 +305,55 @@ const UserAvatar = ({ name, size = 'md' }) => {
 };
 
 // --- Components ---
+
+const TimeFilter = ({ value, onChange, customRange, onCustomChange }) => {
+    return (
+        <div className="flex flex-wrap items-center gap-2 bg-white p-1 rounded-xl border shadow-sm">
+            {['1d', '7d', '30d', '1y'].map((range) => (
+                <button
+                    key={range}
+                    onClick={() => { onChange(range); onCustomChange(null); }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${value === range ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
+                >
+                    {range === '1d' ? '۲۴ ساعت' : range === '7d' ? '۷ روز' : range === '30d' ? '۳۰ روز' : 'یک سال'}
+                </button>
+            ))}
+            <div className="h-6 w-px bg-gray-200 mx-1"></div>
+            <DatePicker
+                value={customRange}
+                onChange={(date) => { onCustomChange(date); onChange('custom'); }}
+                range
+                calendar={persian}
+                locale={persian_fa}
+                calendarPosition="bottom-left"
+                render={(value, openCalendar) => (
+                    <button onClick={openCalendar} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${value ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}>
+                        <Calendar size={14}/>
+                        {value ? value.toString() : 'تاریخ دلخواه'}
+                    </button>
+                )}
+            />
+            {value && <button onClick={() => { onChange(null); onCustomChange(null); }} className="p-1.5 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-full transition"><X size={14}/></button>}
+        </div>
+    );
+};
+
+const ChartModal = ({ isOpen, onClose, children, title }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+            <div className="bg-white w-full h-full max-w-5xl max-h-[80vh] rounded-3xl p-6 flex flex-col relative animate-in zoom-in-95 duration-200">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-lg font-bold text-gray-800">{title}</h3>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-gray-500"><X size={24}/></button>
+                </div>
+                <div className="flex-1 w-full h-full min-h-0">
+                    {children}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const UserSearchInput = ({ value, onChange, onSelect, allUsers }) => {
   const [open, setOpen] = useState(false);
@@ -355,9 +499,11 @@ const OnboardingTab = ({ onboardings, openModal, navigateToProfile }) => {
     <div className="space-y-6">
       <div className="flex justify-between items-center bg-white/80 backdrop-blur p-4 rounded-2xl shadow-sm border border-white">
         <h2 className="font-bold text-lg text-gray-800 flex items-center gap-2"><GraduationCap size={24} className="text-indigo-500"/> ورود کاربران جدید</h2>
-        <button onClick={() => openModal('onboarding')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm flex gap-2 items-center hover:bg-indigo-700 shadow-lg shadow-indigo-200 font-bold">
-          <Plus size={16} /> ثبت کاربر جدید
-        </button>
+        <div className="flex gap-2">
+            <button onClick={() => openModal('onboarding')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm flex gap-2 items-center hover:bg-indigo-700 shadow-lg shadow-indigo-200 font-bold">
+            <Plus size={16} /> ثبت کاربر جدید
+            </button>
+        </div>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -406,48 +552,6 @@ const OnboardingTab = ({ onboardings, openModal, navigateToProfile }) => {
   );
 };
 
-const HeatmapChart = ({ issues }) => {
-  const data = useMemo(() => {
-    // Initialize 7 days x 24 hours grid
-    const grid = Array(7).fill(0).map(() => Array(24).fill(0));
-    issues.forEach(i => {
-      if (!i.created_at || !i.created_at.includes('T')) return;
-      const date = new Date(i.created_at);
-      const day = date.getDay(); // 0=Sun
-      const hour = date.getHours();
-      grid[day][hour]++;
-    });
-    
-    // Flatten for ScatterChart: { x: hour, y: day, z: count }
-    const flatData = [];
-    const days = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه', 'شنبه'];
-    grid.forEach((hours, dayIdx) => {
-      hours.forEach((count, hourIdx) => {
-        if (count > 0) flatData.push({ day: days[dayIdx], hour: hourIdx, count, dayIdx });
-      });
-    });
-    return flatData;
-  }, [issues]);
-
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis type="number" dataKey="hour" name="ساعت" unit="h" domain={[0, 23]} tickCount={24} />
-        <YAxis type="category" dataKey="day" name="روز" allowDuplicatedCategory={false} />
-        <ZAxis type="number" dataKey="count" range={[50, 500]} name="تعداد" />
-        <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-        <Scatter name="Issues" data={data} fill="#8884d8">
-          {data.map((entry, index) => (
-            <Cell key={`cell-${index}`} fill={`rgba(136, 132, 216, ${Math.min(entry.count / 5 + 0.2, 1)})`} />
-          ))}
-        </Scatter>
-      </ScatterChart>
-    </ResponsiveContainer>
-  );
-};
-
-// Simple Cohort Analysis (Retention based on Registration Month)
 const CohortChart = ({ onboardings }) => {
   const data = useMemo(() => {
     const cohorts = {};
@@ -457,7 +561,7 @@ const CohortChart = ({ onboardings }) => {
       const month = date.toLocaleDateString('fa-IR', { month: 'long' });
       if (!cohorts[month]) cohorts[month] = { month, total: 0, active: 0 };
       cohorts[month].total++;
-      if (u.progress > 0) cohorts[month].active++; // Simple "active" logic
+      if (u.progress > 0) cohorts[month].active++;
     });
     return Object.values(cohorts).map(c => ({ ...c, retention: Math.round((c.active / c.total) * 100) }));
   }, [onboardings]);
@@ -475,7 +579,7 @@ const CohortChart = ({ onboardings }) => {
   );
 };
 
-const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, profileSearch, setProfileSearch }) => {
+const UserProfile = ({ allUsers, issues, frozen, features, refunds, onboardings, openModal, profileSearch, setProfileSearch }) => {
     const [search, setSearch] = useState(profileSearch || '');
     const [selectedUserStats, setSelectedUserStats] = useState(null);
     const [suggestions, setSuggestions] = useState([]);
@@ -510,10 +614,11 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
             ...issues.map(x => ({ ...x, src: 'issue', date: x.created_at })),
             ...frozen.map(x => ({ ...x, src: 'frozen', date: x.frozen_at })),
             ...features.map(x => ({ ...x, src: 'feature', date: x.created_at })),
-            ...refunds.map(x => ({ ...x, src: 'refund', date: x.requested_at }))
+            ...refunds.map(x => ({ ...x, src: 'refund', date: x.requested_at })),
+            ...onboardings.map(x => ({ ...x, src: 'onboarding', date: x.created_at }))
         ].filter(r => r.username === search)
          .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    }, [search, issues, frozen, features, refunds]);
+    }, [search, issues, frozen, features, refunds, onboardings]);
 
     return (
         <div className="w-full max-w-5xl mx-auto space-y-6">
@@ -555,7 +660,6 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
 
             {selectedUserStats ? (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    {/* User Info Card */}
                     <div className="bg-gradient-to-l from-blue-50 to-white p-6 rounded-3xl shadow-sm border border-blue-100 flex flex-col md:flex-row items-center md:items-start gap-6 relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-32 h-32 bg-blue-100 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
                         <UserAvatar name={selectedUserStats.username} size="lg" />
@@ -579,7 +683,6 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
                         </div>
                     </div>
 
-                    {/* Quick Actions */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <button onClick={() => openModal('issue', { username: selectedUserStats.username })} className="bg-white p-4 rounded-2xl border shadow-sm hover:shadow-md hover:border-blue-300 transition flex flex-col items-center gap-2 group">
                             <div className="p-2 bg-blue-50 text-blue-600 rounded-full group-hover:scale-110 transition"><AlertTriangle size={20}/></div>
@@ -599,7 +702,6 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
                         </button>
                     </div>
 
-                    {/* Timeline */}
                     <div className="bg-white/80 backdrop-blur p-6 rounded-3xl shadow-sm border border-white">
                         <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><History size={18} className="text-gray-500"/> تاریخچه فعالیت‌ها</h3>
                         {userRecords.length > 0 ? (
@@ -609,7 +711,9 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
                                         <div className={`absolute right-4 top-1 w-4 h-4 rounded-full border-2 border-white shadow-sm z-10 ${
                                             r.src === 'issue' ? 'bg-amber-400' : 
                                             r.src === 'frozen' ? 'bg-blue-400' : 
-                                            r.src === 'feature' ? 'bg-purple-400' : 'bg-rose-400'
+                                            r.src === 'feature' ? 'bg-purple-400' : 
+                                            r.src === 'onboarding' ? 'bg-indigo-400' :
+                                            'bg-rose-400'
                                         }`}></div>
                                         <div className="bg-slate-50 border rounded-2xl p-4 hover:bg-white hover:shadow-md transition group">
                                             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -619,19 +723,20 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
                                                         r.src === 'issue' ? 'bg-amber-50 text-amber-700 border-amber-100' : 
                                                         r.src === 'frozen' ? 'bg-blue-50 text-blue-700 border-blue-100' : 
                                                         r.src === 'feature' ? 'bg-purple-50 text-purple-700 border-purple-100' : 
+                                                        r.src === 'onboarding' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
                                                         'bg-rose-50 text-rose-700 border-rose-100'
                                                     }`}>
-                                                        {r.src === 'issue' ? 'مشکل فنی' : r.src === 'frozen' ? 'اکانت فریز' : r.src === 'feature' ? 'درخواست فیچر' : 'بازگشت وجه'}
+                                                        {r.src === 'issue' ? 'مشکل فنی' : r.src === 'frozen' ? 'اکانت فریز' : r.src === 'feature' ? 'درخواست فیچر' : r.src === 'onboarding' ? 'آنبوردینگ' : 'بازگشت وجه'}
                                                     </span>
                                                 </div>
                                                 <button onClick={() => openModal(r.src, r)} className="text-xs px-3 py-1.5 rounded-xl border bg-white hover:bg-blue-600 hover:text-white transition opacity-0 group-hover:opacity-100">ویرایش</button>
                                             </div>
-                                            <div className="font-bold text-sm text-gray-800 mb-2">{r.desc_text || r.reason || r.title}</div>
+                                            <div className="font-bold text-sm text-gray-800 mb-2">{r.desc_text || r.reason || r.title || r.conversation_summary || (r.progress ? `پیشرفت: ${r.progress}%` : '')}</div>
                                             <div className="flex items-center gap-2">
                                                 <span className={`text-[10px] px-2 py-0.5 rounded border ${
                                                     ['حل‌شده', 'انجام شد', 'رفع شد'].includes(r.status) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-white text-gray-500'
                                                 }`}>
-                                                    وضعیت: {r.status || r.action || 'نامشخص'}
+                                                    وضعیت: {r.status || r.action || r.initial_call_status || 'نامشخص'}
                                                 </span>
                                             </div>
                                         </div>
@@ -661,80 +766,121 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, openModal, p
     );
 };
 
-const AIAnalysisTab = ({ issues, onboardings, navigateToProfile }) => {
-    const [aiQuery, setAiQuery] = useState('');
-    const [aiResult, setAiResult] = useState('');
+const AIChatBox = ({ contextData }) => {
+    const [messages, setMessages] = useState([]);
+    const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
+    const scrollRef = useRef(null);
 
-    const handleOnboardingAnalysis = async () => {
-        setLoading(true);
-        const prompt = `تحلیل روند آنبوردینگ کاربران: ${JSON.stringify(onboardings.slice(0, 30).map(u => ({ progress: u.progress, note: u.meeting_note || u.followup_note })))}. لطفا موانع اصلی پیشرفت و پیشنهادات برای افزایش نرخ تکمیل پروفایل را بگو.`;
-        const res = await callGeminiAI(prompt);
-        setAiResult(res || 'خطا در ارتباط با هوش مصنوعی');
-        setLoading(false);
-    };
+    useEffect(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }, [messages]);
 
-    const handleGeneralAnalysis = async () => {
+    const handleSend = async () => {
+        if (!input.trim()) return;
+        const userMsg = { role: 'user', text: input };
+        setMessages(prev => [...prev, userMsg]);
+        setInput('');
         setLoading(true);
-        const prompt = `تحلیل کلی مشکلات اخیر: ${JSON.stringify(issues.slice(0, 50).map(i => ({ type: i.type, desc: i.desc_text })))}. لطفا مهمترین الگوها و پیشنهادات بهبود را بگو.`;
-        const res = await callGeminiAI(prompt);
-        setAiResult(res || 'خطا در ارتباط با هوش مصنوعی');
-        setLoading(false);
-    };
 
-    const handleSemanticSearch = async () => {
-        if (!aiQuery) return;
-        setLoading(true);
-        const prompt = `در بین این مشکلات، کدام‌ها به "${aiQuery}" مربوط می‌شوند؟ لیست کن: ${JSON.stringify(issues.slice(0, 50).map(i => ({ id: i.id, username: i.username, desc: i.desc_text })))}`;
-        const res = await callGeminiAI(prompt);
-        setAiResult(res || 'خطا در ارتباط با هوش مصنوعی');
+        // Prepare context
+        const contextStr = JSON.stringify(contextData);
+        // We only send the prompt + data. Assistant handles the rest.
+        // We assume the assistant can handle a large context or we might need to truncate if too large.
+        // For this task, we send it all.
+        const prompt = `Context Data: ${contextStr}\n\nUser Question: ${userMsg.text}`;
+        
+        const res = await callVardastAI(prompt);
+        setMessages(prev => [...prev, { role: 'ai', text: res || 'Error fetching response' }]);
         setLoading(false);
     };
 
     return (
-        <div className="max-w-4xl mx-auto space-y-6">
-            <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-8 rounded-3xl text-white shadow-lg relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
-                <div className="relative z-10">
-                    <h2 className="text-2xl font-black mb-2 flex items-center gap-2"><Sparkles className="text-amber-300"/> دستیار هوشمند</h2>
-                    <p className="text-indigo-100 text-sm mb-6">تحلیل عمیق داده‌ها و جستجوی معنایی در گزارشات کاربران</p>
-                    
-                    <div className="flex gap-3">
-                        <button onClick={handleGeneralAnalysis} disabled={loading} className="bg-white text-indigo-700 px-6 py-3 rounded-xl font-bold hover:bg-indigo-50 transition shadow-lg flex items-center gap-2">
-                            {loading ? <Loader2 size={18} className="animate-spin"/> : <Activity size={18}/>}
-                            تحلیل کلی وضعیت
-                        </button>
-                        <button onClick={handleOnboardingAnalysis} disabled={loading} className="bg-indigo-500 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-600 transition shadow-lg flex items-center gap-2 border border-indigo-400">
-                            {loading ? <Loader2 size={18} className="animate-spin"/> : <GraduationCap size={18}/>}
-                            تحلیل آنبوردینگ
-                        </button>
+        <div className="flex flex-col h-[500px] bg-white rounded-3xl shadow-lg border overflow-hidden">
+            <div className="bg-slate-50 p-4 border-b font-bold text-gray-700 flex items-center gap-2">
+                <MessageSquare size={18} className="text-purple-600"/> چت با دستیار هوشمند
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
+                {messages.length === 0 && (
+                    <div className="text-center text-gray-400 mt-20 text-sm">
+                        سوال خود را در مورد داده‌های فیلتر شده بپرسید...
+                    </div>
+                )}
+                {messages.map((m, i) => (
+                    <div key={i} className={`flex ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}>
+                        <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${m.role === 'user' ? 'bg-purple-100 text-purple-900 rounded-br-none' : 'bg-slate-100 text-gray-800 rounded-bl-none'}`}>
+                            {m.text}
+                        </div>
+                    </div>
+                ))}
+                {loading && <div className="text-center"><Loader2 size={20} className="animate-spin text-purple-500"/></div>}
+            </div>
+            <div className="p-3 border-t bg-slate-50 flex gap-2">
+                <input 
+                    value={input} 
+                    onChange={(e) => setInput(e.target.value)} 
+                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    placeholder="پیام خود را بنویسید..." 
+                    className="flex-1 border rounded-xl px-4 py-2 outline-none focus:border-purple-500"
+                />
+                <button onClick={handleSend} disabled={loading} className="bg-purple-600 text-white p-2 rounded-xl hover:bg-purple-700 transition">
+                    <Send size={20} />
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const AIAnalysisTab = ({ issues, onboardings }) => {
+    const [loading, setLoading] = useState(false);
+    const [analysisResult, setAnalysisResult] = useState('');
+
+    const handleAnalysis = async (type) => {
+        setLoading(true);
+        let data = [];
+        if (type === 'onboarding') {
+            data = onboardings.map(u => ({ progress: u.progress, note: u.meeting_note || u.followup_note }));
+        } else {
+            data = issues.map(i => ({ type: i.type, desc: i.desc_text }));
+        }
+        
+        // "Only prompt determining what info to send should remain"
+        const prompt = `Data: ${JSON.stringify(data)}`;
+        const res = await callVardastAI(prompt);
+        setAnalysisResult(res || 'Error');
+        setLoading(false);
+    };
+
+    return (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-6xl mx-auto">
+            <div className="space-y-6">
+                <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-8 rounded-3xl text-white shadow-lg relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+                    <div className="relative z-10">
+                        <h2 className="text-2xl font-black mb-2 flex items-center gap-2"><Sparkles className="text-amber-300"/> تحلیل خودکار</h2>
+                        <p className="text-indigo-100 text-sm mb-6">تحلیل گزارشات موجود در بازه زمانی انتخاب شده</p>
+                        
+                        <div className="flex gap-3">
+                            <button onClick={() => handleAnalysis('general')} disabled={loading} className="bg-white text-indigo-700 px-4 py-2 rounded-xl font-bold hover:bg-indigo-50 transition shadow-lg flex items-center gap-2 text-sm">
+                                {loading ? <Loader2 size={16} className="animate-spin"/> : <Activity size={16}/>}
+                                مشکلات فنی
+                            </button>
+                            <button onClick={() => handleAnalysis('onboarding')} disabled={loading} className="bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold hover:bg-indigo-600 transition shadow-lg flex items-center gap-2 border border-indigo-400 text-sm">
+                                {loading ? <Loader2 size={16} className="animate-spin"/> : <GraduationCap size={16}/>}
+                                آنبوردینگ
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </div>
-
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Search size={18}/> جستجوی معنایی</h3>
-                <div className="flex gap-2">
-                    <input 
-                        value={aiQuery} 
-                        onChange={(e) => setAiQuery(e.target.value)}
-                        placeholder="مثلا: کاربرانی که مشکل درگاه پرداخت داشتند..." 
-                        className="flex-1 bg-slate-50 border border-slate-200 p-3 rounded-xl outline-none focus:border-purple-500 transition"
-                        onKeyDown={(e) => e.key === 'Enter' && handleSemanticSearch()}
-                    />
-                    <button onClick={handleSemanticSearch} disabled={loading} className="bg-purple-600 text-white px-4 rounded-xl hover:bg-purple-700 transition shadow-lg shadow-purple-200">
-                        {loading ? <Loader2 size={20} className="animate-spin"/> : <ArrowRight size={20}/>}
-                    </button>
-                </div>
-            </div>
-
-            {aiResult && (
-                <div className="bg-white p-8 rounded-3xl shadow-lg border border-purple-100 animate-in fade-in slide-in-from-bottom-4">
-                    <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed whitespace-pre-line">
-                        {aiResult}
+                
+                {analysisResult && (
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border prose prose-sm max-w-none">
+                        {analysisResult}
                     </div>
-                </div>
-            )}
+                )}
+            </div>
+
+            <AIChatBox contextData={{ issues: issues.length, onboardings: onboardings.length, sample_issues: issues.slice(0, 10) }} />
         </div>
     );
 };
@@ -745,12 +891,23 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
   const [isConnected, setIsConnected] = useState(false);
+  
+  // Data States
   const [issues, setIssues] = useState([]);
   const [frozen, setFrozen] = useState([]);
   const [features, setFeatures] = useState([]);
   const [refunds, setRefunds] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [onboardings, setOnboardings] = useState([]);
+  
+  // Filter States
+  const [globalTimeFilter, setGlobalTimeFilter] = useState(null); // '1d', '7d', etc.
+  const [globalCustomRange, setGlobalCustomRange] = useState(null);
+  
+  const [tabTimeFilter, setTabTimeFilter] = useState(null);
+  const [tabCustomRange, setTabCustomRange] = useState(null);
+
+  // Modal & Form States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState(null);
   const [formData, setFormData] = useState(INITIAL_FORM_DATA);
@@ -758,8 +915,9 @@ export default function App() {
   const [aiLoading, setAiLoading] = useState(false);
   
   // View Modes
-  const [issueViewMode, setIssueViewMode] = useState('table'); // 'table' | 'kanban'
+  const [issueViewMode, setIssueViewMode] = useState('table'); 
   const [featureViewMode, setFeatureViewMode] = useState('table');
+  const [expandedChart, setExpandedChart] = useState(null); // 'trend' | 'cohort'
 
   const [isAuthed, setIsAuthed] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -841,25 +999,32 @@ export default function App() {
     return Object.values(map);
   }, [profiles, issues, frozen, features, refunds, onboardings]);
 
+  // Apply filters
+  const getFiltered = (data, isGlobal = true) => {
+      const r = isGlobal ? globalTimeFilter : tabTimeFilter;
+      const c = isGlobal ? globalCustomRange : tabCustomRange;
+      return filterDataByTime(data, r, c);
+  };
+
+  const filteredIssues = useMemo(() => getFiltered(issues, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [issues, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
+  const filteredFrozen = useMemo(() => getFiltered(frozen, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [frozen, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
+  const filteredRefunds = useMemo(() => getFiltered(refunds, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [refunds, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
+  const filteredOnboardings = useMemo(() => getFiltered(onboardings, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [onboardings, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
+  const filteredFeatures = useMemo(() => getFiltered(features, activeTab === 'dashboard' || activeTab === 'ai-analysis'), [features, globalTimeFilter, globalCustomRange, tabTimeFilter, tabCustomRange, activeTab]);
+
   const analytics = useMemo(() => {
-    const resolved = issues.filter((i) => i.status === 'حل‌شده').length;
-    const total = issues.length;
+    const resolved = filteredIssues.filter((i) => i.status === 'حل‌شده').length;
+    const total = filteredIssues.length;
     const ratio = total ? Math.round((resolved / total) * 100) : 0;
-    return { solvedRatio: ratio, activeFrozen: frozen.filter((f) => f.status === 'فریز').length, refundCount: refunds.length };
-  }, [issues, frozen, refunds]);
+    return { solvedRatio: ratio, activeFrozen: filteredFrozen.filter((f) => f.status === 'فریز').length, refundCount: filteredRefunds.length };
+  }, [filteredIssues, filteredFrozen, filteredRefunds]);
 
   const churnRisks = useMemo(() => {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    const recentIssues = issues.filter(i => {
-        if (!i.created_at) return false;
-        const date = parsePersianDate(i.created_at);
-        return date && date >= thirtyDaysAgo;
-    });
-
+    // Churn risk calculation should perhaps always look at recent history regardless of filter?
+    // User asked "When filter applied on dashboard, it should filter ALL sections".
+    // So we use filteredIssues.
     const userCounts = {};
-    recentIssues.forEach(i => {
+    filteredIssues.forEach(i => {
       if (!userCounts[i.username]) userCounts[i.username] = { count: 0, issues: [] };
       userCounts[i.username].count += 1;
       userCounts[i.username].issues.push({ desc: i.desc_text, status: i.status });
@@ -867,39 +1032,41 @@ export default function App() {
     return Object.entries(userCounts)
         .filter(([_, data]) => data.count > 3)
         .map(([username, data]) => ({ username, count: data.count, issues: data.issues }));
-  }, [issues]);
+  }, [filteredIssues]);
 
   const handleAiChurnAnalysis = async (user) => {
     setAiLoading(true);
-    const prompt = `تحلیل خطر ریزش کاربر ${user.username} با ${user.count} گزارش در ۳۰ روز اخیر. لیست مشکلات: ${JSON.stringify(user.issues)}. لطفا خروجی JSON بده شامل: 
-    1. summary: خلاصه مشکلات کاربر.
-    2. anger_score: نمره خطر ریزش (۱ تا ۱۰).
-    3. root_cause: علت اصلی.
-    4. message: پیام پیشنهادی برای دلجویی.
-    به وضعیت حل شدن یا نشدن مشکلات توجه کن.`;
-    const res = await callGeminiAI(prompt, true);
+    // Reduced prompt as requested
+    const prompt = `User: ${user.username}, Count: ${user.count}, Issues: ${JSON.stringify(user.issues)}`;
+    const res = await callVardastAI(prompt);
     setAiLoading(false);
-    if (res) {
-      try { const data = JSON.parse(res); alert(`🔥 خطر ریزش: ${data.anger_score}/10\n📝 خلاصه: ${data.summary}\n🔍 علت: ${data.root_cause}\n💬 پیشنهاد: ${data.message}`); }
-      catch(e) { alert(res); }
-    }
+    if (res) alert(res); 
   };
 
   const chartData = useMemo(() => {
     const acc = {};
-    issues.forEach((i) => { 
-        // Use ISO date if available, else simple string
-        const d = i.created_at ? (i.created_at.includes('T') ? i.created_at.split('T')[0] : i.created_at.split(' ')[0]) : 'نامشخص'; 
+    filteredIssues.forEach((i) => { 
+        const date = normalizeDate(i);
+        const d = date ? format(date, 'yyyy-MM-dd') : 'نامشخص';
         acc[d] = (acc[d] || 0) + 1; 
     });
-    return Object.keys(acc).map((d) => ({ date: d, count: acc[d] }));
-  }, [issues]);
+    return Object.keys(acc).map((d) => ({ date: d, count: acc[d] })).sort((a,b) => a.date.localeCompare(b.date));
+  }, [filteredIssues]);
 
   const handleSave = async (e) => {
     e.preventDefault();
     const isEdit = !!editingId;
-    // Save ISO string for new items to enable SLA logic
-    const createdTimestamp = formData.date ? new Date(formData.date).toISOString() : new Date().toISOString(); 
+    
+    // Use selected date or default to now
+    let finalDate = new Date();
+    if (formData.date) {
+        // If formData.date is set, it might be string or Date object from DatePicker
+        // If it comes from DatePicker, it's usually DateObject or Date
+        if (typeof formData.date === 'string') finalDate = parsePersianDate(formData.date) || new Date(formData.date);
+        else if (formData.date?.toDate) finalDate = formData.date.toDate();
+        else finalDate = formData.date;
+    }
+    const createdTimestamp = finalDate.toISOString();
     
     let table = '';
     const commonFields = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, flag: formData.flag || null };
@@ -955,9 +1122,8 @@ export default function App() {
     if (!supabase) return alert('دیتابیس متصل نیست.');
     let error = null;
     if (isEdit) {
-      // Audit log simulation
       if (['issues', 'features'].includes(table)) {
-         payload.last_updated_by = 'Admin'; // Mock
+         payload.last_updated_by = 'Admin';
          payload.last_updated_at = new Date().toISOString();
       }
       const res = await supabase.from(table).update(payload).eq('id', editingId);
@@ -1008,7 +1174,11 @@ export default function App() {
     setIsModalOpen(true);
   };
 
-  // ... (UserProfile, AIAnalysisTab, etc. are passed props or defined above)
+  // Reset local tab filter when switching tabs
+  useEffect(() => {
+      setTabTimeFilter(null);
+      setTabCustomRange(null);
+  }, [activeTab]);
   
   if (appPassword && !isAuthed) {
     return (
@@ -1060,14 +1230,19 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 h-full overflow-y-auto overflow-x-hidden">
         <div className="px-4 sm:px-8 py-6 min-h-full">
-          <header className="flex items-center justify-between mb-8">
+          <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
             <div className="flex items-center gap-3">
               <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 bg-white border rounded-xl shadow-sm text-gray-600"><Menu size={20} /></button>
               <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">داشبورد پشتیبانی</h1>
             </div>
-            <div className="text-xs text-slate-500 bg-white/60 px-3 py-1.5 rounded-full border">
-              امروز {new Date().toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })} - {new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
-            </div>
+            
+            {/* Conditional Filter Display */}
+            {activeTab === 'dashboard' && (
+                <TimeFilter value={globalTimeFilter} onChange={setGlobalTimeFilter} customRange={globalCustomRange} onCustomChange={setGlobalCustomRange} />
+            )}
+            {['issues', 'frozen', 'features', 'refunds', 'onboarding'].includes(activeTab) && (
+                <TimeFilter value={tabTimeFilter} onChange={setTabTimeFilter} customRange={tabCustomRange} onCustomChange={setTabCustomRange} />
+            )}
           </header>
 
           {activeTab === 'dashboard' && (
@@ -1077,8 +1252,8 @@ export default function App() {
                 {[
                   { title: 'نرخ حل مشکلات', value: `%${analytics.solvedRatio}`, color: 'from-emerald-500 to-teal-400', icon: CheckCircle2 },
                   { title: 'اکانت‌های فریز', value: analytics.activeFrozen, color: 'from-blue-500 to-indigo-400', icon: Snowflake },
-                  { title: 'آنبوردینگ', value: onboardings.length, color: 'from-amber-500 to-orange-400', icon: GraduationCap },
-                  { title: 'کل تیکت‌ها', value: issues.length, color: 'from-slate-700 to-slate-500', icon: Activity }
+                  { title: 'آنبوردینگ', value: filteredOnboardings.length, color: 'from-amber-500 to-orange-400', icon: GraduationCap },
+                  { title: 'کل تیکت‌ها', value: filteredIssues.length, color: 'from-slate-700 to-slate-500', icon: Activity }
                 ].map((card, idx) => (
                   <div key={idx} className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col justify-between h-32 relative overflow-hidden group hover:shadow-md transition">
                     <div className={`absolute -right-6 -top-6 p-4 rounded-full bg-gradient-to-br ${card.color} opacity-10 scale-150`}><card.icon size={50} /></div>
@@ -1093,7 +1268,7 @@ export default function App() {
                 <div className="xl:col-span-1 bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-red-100 flex flex-col h-80">
                   <h4 className="font-bold text-gray-700 text-sm mb-4 flex items-center gap-2">
                     <span className="w-6 h-6 rounded-full bg-red-100 text-red-500 flex items-center justify-center"><AlertCircle size={14}/></span>
-                    ریسک ریزش کاربر (۳۰ روز اخیر)
+                    ریسک ریزش (۳۰ روز اخیر)
                   </h4>
                   <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                     {churnRisks.length === 0 ? (
@@ -1121,9 +1296,12 @@ export default function App() {
 
                 {/* Analytics Charts */}
                 <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 h-80">
-                   <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col">
-                      <h4 className="font-bold text-gray-700 text-sm mb-4 flex items-center gap-2"><TrendingUp size={16} className="text-blue-500"/>روند ثبت مشکلات</h4>
-                      <div className="flex-1 w-full">
+                   <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col cursor-pointer hover:border-blue-200 transition" onClick={() => setExpandedChart('trend')}>
+                      <h4 className="font-bold text-gray-700 text-sm mb-4 flex items-center gap-2 justify-between">
+                          <span className="flex items-center gap-2"><TrendingUp size={16} className="text-blue-500"/>روند ثبت مشکلات</span>
+                          <Maximize2 size={14} className="text-gray-400"/>
+                      </h4>
+                      <div className="flex-1 w-full pointer-events-none">
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={chartData}>
                             <defs><linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
@@ -1134,17 +1312,38 @@ export default function App() {
                         </ResponsiveContainer>
                       </div>
                    </div>
-                   <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col">
-                      <h4 className="font-bold text-gray-700 text-sm mb-4">نرخ فعال‌سازی کاربران (Cohort)</h4>
-                      <div className="flex-1 w-full"><CohortChart onboardings={onboardings} /></div>
+                   <div className="bg-white/70 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col cursor-pointer hover:border-green-200 transition" onClick={() => setExpandedChart('cohort')}>
+                      <h4 className="font-bold text-gray-700 text-sm mb-4 flex items-center justify-between">
+                          <span>نرخ فعال‌سازی کاربران</span>
+                          <Maximize2 size={14} className="text-gray-400"/>
+                      </h4>
+                      <div className="flex-1 w-full pointer-events-none"><CohortChart onboardings={filteredOnboardings} /></div>
                    </div>
                 </div>
               </div>
             </section>
           )}
 
+          {/* Chart Modals */}
+          <ChartModal isOpen={expandedChart === 'trend'} onClose={() => setExpandedChart(null)} title="روند ثبت مشکلات">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <defs><linearGradient id="colorCountModal" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip contentStyle={{borderRadius: '12px'}} />
+                    <Area type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} fill="url(#colorCountModal)" />
+                </AreaChart>
+              </ResponsiveContainer>
+          </ChartModal>
+
+          <ChartModal isOpen={expandedChart === 'cohort'} onClose={() => setExpandedChart(null)} title="نرخ فعال‌سازی کاربران">
+              <CohortChart onboardings={filteredOnboardings} />
+          </ChartModal>
+
           {activeTab === 'onboarding' && (
-            <OnboardingTab onboardings={onboardings} openModal={openModal} navigateToProfile={navigateToProfile} />
+            <OnboardingTab onboardings={filteredOnboardings} openModal={openModal} navigateToProfile={navigateToProfile} />
           )}
 
           {activeTab === 'issues' && (
@@ -1159,7 +1358,7 @@ export default function App() {
               {issueViewMode === 'kanban' ? (
                 <div className="flex-1 overflow-hidden">
                   <KanbanBoard 
-                    items={issues} 
+                    items={filteredIssues} 
                     onStatusChange={(id, status) => handleStatusChange(id, status, 'issues')} 
                     columns={{'باز': 'باز', 'در حال بررسی': 'در حال بررسی', 'حل‌شده': 'حل‌شده'}}
                     navigateToProfile={navigateToProfile}
@@ -1172,7 +1371,7 @@ export default function App() {
                   <table className="w-full text-sm text-right">
                     <thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">تاریخ</th><th className="p-4"></th></tr></thead>
                     <tbody>
-                      {issues.map(row => (
+                      {filteredIssues.map(row => (
                         <tr key={row.id} className={`border-b last:border-0 hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200' : ''}`}>
                           <td className="p-4 font-bold cursor-pointer hover:text-blue-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td>
                           <td className="p-4 truncate max-w-xs">{row.desc_text}</td>
@@ -1200,7 +1399,7 @@ export default function App() {
               {featureViewMode === 'kanban' ? (
                 <div className="flex-1 overflow-hidden">
                   <KanbanBoard 
-                    items={features} 
+                    items={filteredFeatures} 
                     onStatusChange={(id, status) => handleStatusChange(id, status, 'features')} 
                     columns={{'بررسی نشده': 'بررسی نشده', 'در تحلیل': 'در تحلیل', 'در توسعه': 'در توسعه', 'انجام شد': 'انجام شد'}}
                     navigateToProfile={navigateToProfile}
@@ -1213,7 +1412,7 @@ export default function App() {
                   <table className="w-full text-sm text-right">
                     <thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">عنوان</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4"></th></tr></thead>
                     <tbody>
-                      {features.map(row => (
+                      {filteredFeatures.map(row => (
                         <tr key={row.id} className={`border-b last:border-0 hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200' : ''}`}>
                           <td className="p-4 font-bold cursor-pointer hover:text-purple-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td>
                           <td className="p-4 font-bold">{row.title}</td>
@@ -1236,6 +1435,7 @@ export default function App() {
               frozen={frozen} 
               features={features} 
               refunds={refunds} 
+              onboardings={onboardings}
               openModal={openModal} 
               profileSearch={profileSearch}
               setProfileSearch={setProfileSearch}
@@ -1243,7 +1443,7 @@ export default function App() {
           )}
 
           {activeTab === 'ai-analysis' && (
-            <AIAnalysisTab issues={issues} onboardings={onboardings} navigateToProfile={navigateToProfile} />
+            <AIAnalysisTab issues={filteredIssues} onboardings={filteredOnboardings} navigateToProfile={navigateToProfile} />
           )}
 
           {/* Simple Tables for Frozen and Refunds */}
@@ -1256,7 +1456,7 @@ export default function App() {
                 <table className="w-full text-sm text-right">
                     <thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4"></th></tr></thead>
                     <tbody>
-                        {(activeTab === 'frozen' ? frozen : refunds).map(row => (
+                        {(activeTab === 'frozen' ? filteredFrozen : filteredRefunds).map(row => (
                             <tr key={row.id} className={`border-b hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200' : ''}`}>
                                 <td className="p-4 font-bold cursor-pointer hover:text-blue-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td>
                                 <td className="p-4">{row.desc_text || row.reason}</td>
@@ -1338,7 +1538,18 @@ export default function App() {
                         
                         {/* Date field for reports (not profile, not onboarding) */}
                         {modalType !== 'profile' && (
-                             <div className="space-y-1"><label className="text-xs text-gray-500 font-medium">تاریخ ثبت</label><input type="date" value={formData.date || ''} onChange={(e) => setFormData({...formData, date: e.target.value})} className="w-full border p-3 rounded-xl text-sm" /></div>
+                             <div className="space-y-1">
+                                 <label className="text-xs text-gray-500 font-medium">تاریخ ثبت</label>
+                                 <div className="w-full">
+                                     <DatePicker 
+                                        calendar={persian} 
+                                        locale={persian_fa} 
+                                        value={formData.date || new Date()} 
+                                        onChange={(date) => setFormData({...formData, date: date})}
+                                        inputClass="w-full border p-3 rounded-xl text-sm outline-none focus:border-blue-500"
+                                     />
+                                 </div>
+                             </div>
                         )}
 
                         {/* Common inputs */}
