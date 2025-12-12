@@ -75,7 +75,7 @@ const VARDAST_API_KEY = 'DVmo0Hi2NHQE3kLx-Q7V3NWZBophr_kKDlTXrj7bdtQ';
 const VARDAST_CONTACT_ID = 'a5211d3f-f59a-4a0e-b604-dabef603810c';
 
 // اسم کانالی که گفتی: Dashboard AI
-const VARDAST_CHANNEL_NAME = 'Dashboard AI';
+const VARDAST_CHANNEL_NAME = '';
 
 // اینجا بعداً به‌صورت داینامیک از API پر میشه
 let vardastChannelId = null;
