@@ -1,427 +1,503 @@
-// src/components/modals/ModalManager.jsx
-import React, { useMemo } from "react";
-import { X, Save, Sparkles } from "lucide-react";
+// ModalManager.jsx
+import React from 'react';
+import { X, Wrench } from 'lucide-react';
+import DatePicker from 'react-multi-date-picker';
+import persian from 'react-date-object/calendars/persian';
+import persian_fa from 'react-date-object/locales/persian_fa';
 
 export default function ModalManager({
   isModalOpen,
-  setIsModalOpen,
   modalType,
   formData,
   setFormData,
   handleSave,
   allUsers,
+  closeModal,
+  VoiceRecorder,
   UserSearchInput,
-  VoiceRecorder
 }) {
-  const isOpen = !!isModalOpen;
-
-  const title = useMemo(() => {
-    switch (modalType) {
-      case "issue":
-        return "ثبت/ویرایش مشکل فنی";
-      case "frozen":
-        return "ثبت/ویرایش فریز";
-      case "feature":
-        return "ثبت/ویرایش فیچر";
-      case "refund":
-        return "ثبت/ویرایش بازگشت وجه";
-      case "profile":
-        return "ثبت/ویرایش پروفایل";
-      case "onboarding":
-        return "ثبت/ویرایش آنبوردینگ";
-      default:
-        return "فرم";
-    }
-  }, [modalType]);
-
-  const close = () => setIsModalOpen(false);
-
-  const setField = (key, val) => setFormData((p) => ({ ...p, [key]: val }));
-
-  if (!isOpen) return null;
-
-  const Input = ({
-    label,
-    k,
-    placeholder,
-    type = "text",
-    textarea = false,
-    rows = 3
-  }) => (
-    <div className="space-y-2">
-      <label className="text-xs font-bold text-gray-600">{label}</label>
-      {textarea ? (
-        <textarea
-          value={formData?.[k] ?? ""}
-          onChange={(e) => setField(k, e.target.value)}
-          placeholder={placeholder}
-          rows={rows}
-          className="w-full border rounded-2xl px-3 py-2.5 text-sm bg-slate-50/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
-        />
-      ) : (
-        <input
-          type={type}
-          value={formData?.[k] ?? ""}
-          onChange={(e) => setField(k, e.target.value)}
-          placeholder={placeholder}
-          className="w-full border rounded-2xl px-3 py-2.5 text-sm bg-slate-50/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
-        />
-      )}
-    </div>
-  );
-
-  const Select = ({ label, k, options = [], placeholder = "انتخاب کنید" }) => (
-    <div className="space-y-2">
-      <label className="text-xs font-bold text-gray-600">{label}</label>
-      <select
-        value={formData?.[k] ?? ""}
-        onChange={(e) => setField(k, e.target.value)}
-        className="w-full border rounded-2xl px-3 py-2.5 text-sm bg-white outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
-      >
-        <option value="">{placeholder}</option>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-
-  const Checkbox = ({ label, k }) => (
-    <label className="flex items-center gap-2 text-sm text-gray-700 bg-slate-50/60 border rounded-2xl px-3 py-2.5">
-      <input
-        type="checkbox"
-        checked={!!formData?.[k]}
-        onChange={(e) => setField(k, e.target.checked)}
-      />
-      <span className="font-bold text-xs">{label}</span>
-    </label>
-  );
+  if (!isModalOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-3xl max-h-[85vh] rounded-3xl shadow-2xl border overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="p-5 border-b bg-slate-50 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="font-black text-gray-800">{title}</div>
-            <span className="text-[10px] text-gray-400">
-              {modalType ? `(${modalType})` : ""}
-            </span>
-          </div>
-
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center backdrop-blur-sm z-[60] p-4">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+        <div className="p-5 border-b flex justify-between items-center flex-shrink-0">
+          <h3 className="font-bold text-base text-gray-800">
+            {modalType === 'onboarding' ? 'مدیریت آنبوردینگ' : 'ثبت/ویرایش اطلاعات'}
+          </h3>
           <button
-            onClick={close}
-            className="p-2 rounded-full hover:bg-white border border-transparent hover:border-slate-200 text-gray-500"
-            title="بستن"
+            onClick={closeModal}
+            className="text-gray-400 hover:text-red-500"
           >
             <X size={20} />
           </button>
         </div>
 
-        {/* Body */}
-        <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-5 space-y-5">
-          {/* User picker for all report-like modals */}
-          {modalType !== "profile" && modalType !== "onboarding" && (
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-gray-600">انتخاب کاربر</label>
+        <form
+          onSubmit={handleSave}
+          className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar"
+        >
+          {/* Onboarding Specific Fields */}
+          {modalType === 'onboarding' ? (
+            <div className="space-y-4">
               <UserSearchInput
-                value={formData?.username || ""}
-                onChange={(v) => setField("username", v)}
-                onSelect={(u) => {
-                  if (!u) return;
+                value={formData.username}
+                onChange={(val) =>
+                  setFormData((p) => ({ ...p, username: val }))
+                }
+                onSelect={(u) =>
                   setFormData((p) => ({
                     ...p,
-                    username: u.username || p.username,
-                    phone_number: u.phone_number || p.phone_number,
-                    instagram_username: u.instagram_username || p.instagram_username,
-                    telegram_id: u.telegram_id || p.telegram_id,
-                    website: u.website || p.website,
-                    bio: u.bio || p.bio
-                  }));
-                }}
-                allUsers={allUsers || []}
+                    username: u.username,
+                    phone_number: u.phone_number || '',
+                  }))
+                }
+                allUsers={allUsers}
               />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="شماره تماس" k="phone_number" placeholder="مثلاً 09..." />
-                <Input label="اینستاگرام" k="instagram_username" placeholder="مثلاً mantoo_sepid" />
-              </div>
-            </div>
-          )}
 
-          {/* Common fields */}
-          {modalType === "issue" && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Select
-                  label="ماژول"
-                  k="module"
-                  options={[
-                    "اتصال اینستاگرام",
-                    "اتصال تلگرام",
-                    "اتوماسیون",
-                    "پرومپت",
-                    "پرداخت",
-                    "محصولات",
-                    "داشبورد",
-                    "سایر"
-                  ]}
-                />
-                <Select
-                  label="نوع مشکل"
-                  k="type"
-                  options={[
-                    "باگ",
-                    "کندی",
-                    "عدم پاسخگویی",
-                    "API",
-                    "UI/UX",
-                    "اکانت",
-                    "سایر"
-                  ]}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-500">
+                  درصد پیشرفت ({formData.progress}%)
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={formData.progress || 0}
+                  onChange={(e) =>
+                    setFormData({ ...formData, progress: e.target.value })
+                  }
+                  className="w-full accent-indigo-600 cursor-pointer"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Select
-                  label="وضعیت"
-                  k="status"
-                  options={["باز", "بررسی نشده", "در حال پیگیری", "حل‌شده"]}
-                />
-                <Select
-                  label="وضعیت اشتراک"
-                  k="subscription_status"
-                  options={["Active-Paid", "Paused-Paid", "Trial", "Expired", "Unknown"]}
-                />
-              </div>
+              <select
+                value={formData.has_website || 'false'}
+                onChange={(e) =>
+                  setFormData({ ...formData, has_website: e.target.value })
+                }
+                className="border p-3 rounded-xl text-sm w-full"
+              >
+                <option value="false">وبسایت ندارد</option>
+                <option value="true">وبسایت دارد</option>
+              </select>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Select
-                  label="پرچم پیگیری"
-                  k="flag"
-                  options={["پیگیری فوری", "پیگیری مهم"]}
-                  placeholder="اختیاری"
-                />
-                <Input
-                  label="Resolved At"
-                  k="resolved_at"
-                  placeholder="اختیاری"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-gray-600">شرح مشکل</label>
-                  <VoiceRecorder
-                    onTranscript={(t) =>
-                      setField("desc_text", `${formData?.desc_text || ""}${formData?.desc_text ? "\n" : ""}${t}`)
+              {/* Section 1: Call */}
+              <div className="bg-slate-50 p-3 rounded-xl space-y-2 border">
+                <h4 className="font-bold text-gray-700 text-xs">
+                  ۱. تماس اولیه
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={formData.initial_call_status || ''}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        initial_call_status: e.target.value,
+                      })
                     }
+                    className="border p-2 rounded-lg text-xs w-full"
+                  >
+                    <option value="">وضعیت...</option>
+                    <option value="پاسخ داد">پاسخ داد</option>
+                    <option value="پاسخ نداد">پاسخ نداد</option>
+                    <option value="رد تماس">رد تماس</option>
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="تاریخ (۱۴۰۳/...)"
+                    value={formData.call_date || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, call_date: e.target.value })
+                    }
+                    className="border p-2 rounded-lg text-xs"
                   />
                 </div>
-                <textarea
-                  value={formData?.desc_text ?? ""}
-                  onChange={(e) => setField("desc_text", e.target.value)}
-                  rows={4}
-                  placeholder="شرح مشکل..."
-                  className="w-full border rounded-2xl px-3 py-2.5 text-sm bg-slate-50/50 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
+                <div className="relative">
+                  <textarea
+                    placeholder="خلاصه مکالمه..."
+                    rows="2"
+                    value={formData.conversation_summary || ''}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        conversation_summary: e.target.value,
+                      })
+                    }
+                    className="w-full border p-2 rounded-lg text-xs"
+                  />
+                  <div className="absolute left-1 bottom-1">
+                    <VoiceRecorder
+                      onTranscript={(text) =>
+                        setFormData((p) => ({
+                          ...p,
+                          conversation_summary:
+                            (p.conversation_summary || '') + ' ' + text,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Meeting */}
+              <div className="bg-slate-50 p-3 rounded-xl space-y-2 border">
+                <h4 className="font-bold text-gray-700 text-xs">
+                  ۲. جلسه آنلاین
+                </h4>
+                <input
+                  type="text"
+                  placeholder="تاریخ جلسه"
+                  value={formData.meeting_date || ''}
+                  onChange={(e) =>
+                    setFormData({ ...formData, meeting_date: e.target.value })
+                  }
+                  className="border p-2 rounded-lg text-xs w-full"
+                />
+                <div className="relative">
+                  <textarea
+                    placeholder="توضیحات جلسه..."
+                    rows="2"
+                    value={formData.meeting_note || ''}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        meeting_note: e.target.value,
+                      })
+                    }
+                    className="w-full border p-2 rounded-lg text-xs"
+                  />
+                  <div className="absolute left-1 bottom-1">
+                    <VoiceRecorder
+                      onTranscript={(text) =>
+                        setFormData((p) => ({
+                          ...p,
+                          meeting_note: (p.meeting_note || '') + ' ' + text,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: Followup */}
+              <div className="bg-slate-50 p-3 rounded-xl space-y-2 border">
+                <h4 className="font-bold text-gray-700 text-xs">
+                  ۳. پیگیری بعدی
+                </h4>
+                <input
+                  type="text"
+                  placeholder="تاریخ فالوآپ"
+                  value={formData.followup_date || ''}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      followup_date: e.target.value,
+                    })
+                  }
+                  className="border p-2 rounded-lg text-xs w-full"
+                />
+                <div className="relative">
+                  <textarea
+                    placeholder="توضیحات پیگیری..."
+                    rows="2"
+                    value={formData.followup_note || ''}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        followup_note: e.target.value,
+                      })
+                    }
+                    className="w-full border p-2 rounded-lg text-xs"
+                  />
+                  <div className="absolute left-1 bottom-1">
+                    <VoiceRecorder
+                      onTranscript={(text) =>
+                        setFormData((p) => ({
+                          ...p,
+                          followup_note: (p.followup_note || '') + ' ' + text,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            // Default Fields for other types
+            <>
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500 font-medium">
+                  نام کاربری
+                </label>
+                <UserSearchInput
+                  value={formData.username || ''}
+                  onChange={(val) =>
+                    setFormData((prev) => ({ ...prev, username: val }))
+                  }
+                  onSelect={(u) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      username: u.username,
+                      phone_number: u.phone_number || prev.phone_number,
+                      instagram_username:
+                        u.instagram_username || prev.instagram_username,
+                    }))
+                  }
+                  allUsers={allUsers}
                 />
               </div>
 
-              <Input
-                label="یادداشت فنی"
-                k="technical_note"
-                placeholder="اختیاری"
-                textarea
-                rows={3}
-              />
+              {/* Date field for reports (not profile, not onboarding) */}
+              {modalType !== 'profile' && (
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500 font-medium">
+                    تاریخ ثبت
+                  </label>
+                  <div className="w-full">
+                    <DatePicker
+                      calendar={persian}
+                      locale={persian_fa}
+                      value={formData.date || new Date()}
+                      onChange={(date) =>
+                        setFormData({ ...formData, date: date })
+                      }
+                      inputClass="w-full border p-3 rounded-xl text-sm outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
 
-              <Checkbox label="نیاز به بررسی فنی" k="technical_review" />
-            </div>
-          )}
-
-          {modalType === "frozen" && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Select
-                  label="ماژول"
-                  k="module"
-                  options={["اینستاگرام", "تلگرام", "اتوماسیون", "پرومپت", "سایر"]}
+              {/* Common inputs */}
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  placeholder="شماره تماس"
+                  value={formData.phone_number || ''}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      phone_number: e.target.value,
+                    })
+                  }
+                  className="border p-3 rounded-xl text-sm w-full"
                 />
-                <Select
-                  label="وضعیت"
-                  k="status"
-                  options={["فریز", "رفع شد", "در حال پیگیری"]}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="علت" k="cause" placeholder="مثلاً محدودیت API / مشکل توکن..." />
-                <Input label="تعداد دفعات" k="freeze_count" placeholder="مثلاً 2" type="number" />
-              </div>
-
-              <Input label="شرح" k="desc_text" placeholder="شرح وضعیت..." textarea rows={4} />
-              <Input label="یادداشت" k="note" placeholder="اختیاری" textarea rows={3} />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="اولین فریز" k="first_frozen_at" placeholder="اختیاری" />
-                <Input label="آخرین فریز" k="last_frozen_at" placeholder="اختیاری" />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="Resolve Status" k="resolve_status" placeholder="اختیاری" />
-                <Select
-                  label="وضعیت اشتراک"
-                  k="subscription_status"
-                  options={["Active-Paid", "Paused-Paid", "Trial", "Expired", "Unknown"]}
+                <input
+                  placeholder="اینستاگرام"
+                  value={formData.instagram_username || ''}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      instagram_username: e.target.value,
+                    })
+                  }
+                  className="border p-3 rounded-xl text-sm w-full"
                 />
               </div>
 
-              <Select
-                label="پرچم پیگیری"
-                k="flag"
-                options={["پیگیری فوری", "پیگیری مهم"]}
-                placeholder="اختیاری"
-              />
-            </div>
+              {modalType === 'profile' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      placeholder="آیدی تلگرام"
+                      value={formData.telegram_id || ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          telegram_id: e.target.value,
+                        })
+                      }
+                      className="border p-3 rounded-xl text-sm w-full"
+                    />
+                    <input
+                      placeholder="وبسایت"
+                      value={formData.website || ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          website: e.target.value,
+                        })
+                      }
+                      className="border p-3 rounded-xl text-sm w-full"
+                    />
+                  </div>
+                  <textarea
+                    placeholder="بیوگرافی..."
+                    rows="3"
+                    value={formData.bio || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, bio: e.target.value })
+                    }
+                    className="w-full border p-3 rounded-xl text-sm"
+                  />
+                </>
+              )}
+
+              {/* Issue Specific */}
+              {modalType === 'issue' && (
+                <>
+                  <select
+                    value={formData.status || 'باز'}
+                    onChange={(e) =>
+                      setFormData({ ...formData, status: e.target.value })
+                    }
+                    className="border p-3 rounded-xl text-sm w-full"
+                  >
+                    <option value="باز">باز</option>
+                    <option value="در حال بررسی">در حال بررسی</option>
+                    <option value="حل‌شده">حل‌شده</option>
+                  </select>
+                  <div className="relative">
+                    <textarea
+                      rows="3"
+                      placeholder="شرح مشکل..."
+                      value={formData.desc_text || ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          desc_text: e.target.value,
+                        })
+                      }
+                      className="w-full border p-3 rounded-xl text-sm"
+                    />
+                    <div className="absolute left-2 bottom-2">
+                      <VoiceRecorder
+                        onTranscript={(text) =>
+                          setFormData((p) => ({
+                            ...p,
+                            desc_text: (p.desc_text || '') + ' ' + text,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="tech_review"
+                      checked={formData.technical_review || false}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          technical_review: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300"
+                    />
+                    <label
+                      htmlFor="tech_review"
+                      className="text-sm text-gray-700 font-bold flex items-center gap-1"
+                    >
+                      <Wrench size={14} className="text-gray-500" />
+                      بررسی توسط تیم فنی
+                    </label>
+                  </div>
+                  <div className="mt-2 text-xs text-gray-500 font-bold">
+                    اولویت
+                  </div>
+                  <select
+                    value={formData.flag || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, flag: e.target.value })
+                    }
+                    className="border p-3 rounded-xl text-sm w-full mt-1"
+                  >
+                    <option value="">عادی</option>
+                    <option value="پیگیری مهم">پیگیری مهم</option>
+                    <option value="پیگیری فوری">پیگیری فوری</option>
+                  </select>
+                </>
+              )}
+
+              {/* Feature Specific */}
+              {modalType === 'feature' && (
+                <>
+                  <select
+                    value={formData.status || 'بررسی نشده'}
+                    onChange={(e) =>
+                      setFormData({ ...formData, status: e.target.value })
+                    }
+                    className="border p-3 rounded-xl text-sm w-full"
+                  >
+                    <option value="بررسی نشده">بررسی نشده</option>
+                    <option value="در تحلیل">در تحلیل</option>
+                    <option value="در توسعه">در توسعه</option>
+                    <option value="انجام شد">انجام شد</option>
+                  </select>
+                  <input
+                    placeholder="عنوان فیچر"
+                    value={formData.title || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, title: e.target.value })
+                    }
+                    className="border p-3 rounded-xl text-sm w-full"
+                  />
+                  <div className="relative">
+                    <textarea
+                      rows="3"
+                      placeholder="توضیحات..."
+                      value={formData.desc_text || ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          desc_text: e.target.value,
+                        })
+                      }
+                      className="w-full border p-3 rounded-xl text-sm"
+                    />
+                    <div className="absolute left-2 bottom-2">
+                      <VoiceRecorder
+                        onTranscript={(text) =>
+                          setFormData((p) => ({
+                            ...p,
+                            desc_text: (p.desc_text || '') + ' ' + text,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Frozen & Refund simple forms */}
+              {(modalType === 'frozen' || modalType === 'refund') && (
+                <div className="relative">
+                  <textarea
+                    rows="3"
+                    placeholder="توضیحات..."
+                    value={formData.desc_text || formData.reason || ''}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        [modalType === 'refund' ? 'reason' : 'desc_text']:
+                          e.target.value,
+                      })
+                    }
+                    className="w-full border p-3 rounded-xl text-sm"
+                  />
+                  <div className="absolute left-2 bottom-2">
+                    <VoiceRecorder
+                      onTranscript={(text) => {
+                        const field = modalType === 'refund' ? 'reason' : 'desc_text';
+                        setFormData((p) => ({
+                          ...p,
+                          [field]: (p[field] || '') + ' ' + text,
+                        }));
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
-          {modalType === "feature" && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="عنوان" k="title" placeholder="مثلاً دکمه توقف چت در استوری" />
-                <Input label="دسته‌بندی" k="category" placeholder="مثلاً Smart Automation" />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Select
-                  label="وضعیت"
-                  k="status"
-                  options={["بررسی نشده", "در حال بررسی", "در حال توسعه", "انجام شد"]}
-                />
-                <Input label="تکرار" k="repeat_count" type="number" placeholder="مثلاً 3" />
-                <Input label="اهمیت" k="importance" type="number" placeholder="مثلاً 5" />
-              </div>
-
-              <Input label="شرح" k="desc_text" placeholder="شرح فیچر..." textarea rows={4} />
-              <Input label="یادداشت داخلی" k="internal_note" placeholder="اختیاری" textarea rows={3} />
-
-              <Select
-                label="پرچم پیگیری"
-                k="flag"
-                options={["پیگیری فوری", "پیگیری مهم"]}
-                placeholder="اختیاری"
-              />
-            </div>
-          )}
-
-          {modalType === "refund" && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="دلیل" k="reason" placeholder="مثلاً عدم نتیجه / مشکل فنی..." />
-                <Input label="مدت همکاری" k="duration" placeholder="مثلاً 2 هفته" />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="دسته‌بندی" k="category" placeholder="مثلاً نارضایتی" />
-                <Input label="منبع فروش" k="sales_source" placeholder="مثلاً اینستاگرام / معرفی" />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="اقدام" k="action" placeholder="مثلاً در حال بررسی" />
-                <Input label="امکان بازگشت وجه" k="can_return" placeholder="مثلاً بله/خیر" />
-              </div>
-
-              <Input label="پیشنهاد" k="suggestion" placeholder="اختیاری" textarea rows={3} />
-              <Input label="یادداشت اپس" k="ops_note" placeholder="اختیاری" textarea rows={3} />
-
-              <Select
-                label="پرچم پیگیری"
-                k="flag"
-                options={["پیگیری فوری", "پیگیری مهم"]}
-                placeholder="اختیاری"
-              />
-            </div>
-          )}
-
-          {modalType === "profile" && (
-            <div className="space-y-4">
-              <Input label="نام کاربری" k="username" placeholder="مثلاً customer_1" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="شماره تماس" k="phone_number" placeholder="09..." />
-                <Input label="اینستاگرام" k="instagram_username" placeholder="@..." />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="تلگرام" k="telegram_id" placeholder="مثلاً @id" />
-                <Input label="وب‌سایت" k="website" placeholder="example.com" />
-              </div>
-              <Input label="Bio" k="bio" placeholder="توضیحات کوتاه..." textarea rows={4} />
-            </div>
-          )}
-
-          {modalType === "onboarding" && (
-            <div className="space-y-4">
-              <Input label="نام کاربری" k="username" placeholder="مثلاً customer_1" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="شماره تماس" k="phone_number" placeholder="09..." />
-                <Input label="اینستاگرام" k="instagram_username" placeholder="@..." />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="تلگرام" k="telegram_id" placeholder="مثلاً @id" />
-                <Select label="وب‌سایت دارد؟" k="has_website" options={["true", "false"]} />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="درصد پیشرفت" k="progress" type="number" placeholder="0 تا 100" />
-                <Select
-                  label="وضعیت تماس اولیه"
-                  k="initial_call_status"
-                  options={["پاسخ داد", "پاسخ نداد", "در انتظار", "نامشخص"]}
-                />
-              </div>
-
-              <Input
-                label="خلاصه مکالمه"
-                k="conversation_summary"
-                placeholder="خلاصه..."
-                textarea
-                rows={3}
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="تاریخ تماس" k="call_date" placeholder="اختیاری" />
-                <Input label="تاریخ جلسه" k="meeting_date" placeholder="اختیاری" />
-              </div>
-
-              <Input label="یادداشت جلسه" k="meeting_note" placeholder="اختیاری" textarea rows={3} />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input label="تاریخ پیگیری" k="followup_date" placeholder="اختیاری" />
-                <Input label="یادداشت پیگیری" k="followup_note" placeholder="اختیاری" textarea rows={3} />
-              </div>
-            </div>
-          )}
-        </form>
-
-        {/* Footer */}
-        <div className="p-4 border-t bg-white flex items-center justify-between gap-3">
           <button
-            type="button"
-            onClick={close}
-            className="px-4 py-2 rounded-xl border bg-white hover:bg-slate-50 text-gray-600 font-bold text-sm transition"
+            type="submit"
+            className="w-full bg-gradient-to-l from-blue-600 to-blue-500 text-white p-3 rounded-xl font-bold hover:shadow-lg mt-4 text-sm"
           >
-            انصراف
-          </button>
-
-          <button
-            type="button"
-            onClick={handleSave}
-            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm transition flex items-center gap-2 shadow-lg shadow-blue-200"
-          >
-            <Save size={16} />
             ذخیره
           </button>
-        </div>
+        </form>
       </div>
     </div>
   );
