@@ -15,22 +15,20 @@ const OnboardingTab = ({ onboardings, openModal, navigateToProfile, setHistoryMo
   });
 
   const columns = {
-      '0_percent': 'گزارشات صفر درصد',
-      'in_progress': 'گزارشات در حال تکمیل',
-      '100_percent': 'گزارشات ۱۰۰ درصد'
+      '0_percent': 'شروع نکرده',
+      'in_progress': 'در حال تکمیل',
+      '100_percent': 'تکمیل شده'
   };
 
   return (
     <div className="space-y-6 h-full flex flex-col">
-      <div className="flex justify-end items-center bg-white/80 dark:bg-slate-800/80 backdrop-blur p-4 rounded-2xl shadow-sm border border-white dark:border-slate-700 shrink-0 liquid-glass">
-        <div className="flex gap-2 items-center">
-            <div className="flex gap-2 bg-slate-100 dark:bg-slate-700 p-1 rounded-xl">
-                <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${viewMode === 'grid' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}><List size={16}/> شبکه</button>
-                <button onClick={() => setViewMode('kanban')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${viewMode === 'kanban' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}><Columns size={16}/> کانبان</button>
-            </div>
-            <button onClick={() => openModal('onboarding')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm flex gap-2 items-center hover:bg-indigo-700 shadow-lg shadow-indigo-200 font-bold">
-            <Plus size={16} /> ثبت کاربر جدید
-            </button>
+      <div className="flex justify-between items-center bg-white/80 dark:bg-slate-800/80 backdrop-blur p-4 rounded-2xl shadow-sm border border-white dark:border-slate-700 shrink-0 liquid-glass">
+        <button onClick={() => openModal('onboarding')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm flex gap-2 items-center hover:bg-indigo-700 shadow-lg shadow-indigo-200 font-bold">
+        <Plus size={16} /> ثبت کاربر جدید
+        </button>
+        <div className="flex gap-2 bg-slate-100 dark:bg-slate-700 p-1 rounded-xl">
+            <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${viewMode === 'grid' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}><List size={16}/> شبکه</button>
+            <button onClick={() => setViewMode('kanban')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${viewMode === 'kanban' ? 'bg-white dark:bg-slate-800 shadow text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}><Columns size={16}/> کانبان</button>
         </div>
       </div>
       
@@ -60,6 +58,7 @@ const OnboardingTab = ({ onboardings, openModal, navigateToProfile, setHistoryMo
                 columns={columns} 
                 navigateToProfile={navigateToProfile} 
                 openModal={openModal} 
+                setHistoryModalData={setHistoryModalData}
                 type="onboarding" 
              />
           </div>

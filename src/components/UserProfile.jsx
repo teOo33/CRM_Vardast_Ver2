@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, Search, Edit, Clock, History, Plus } from 'lucide-react';
+import { User, Search, Edit, Clock, History, Plus, AlertTriangle, Snowflake, CreditCard, Lightbulb } from 'lucide-react';
 import UserAvatar from './UserAvatar';
 import { formatDate } from '../utils/helpers';
 
@@ -30,9 +30,13 @@ const UserProfile = ({ usersData = [], issues, frozen, features, refunds, onboar
                                         {selectedUserStats.website && <span className="px-2 py-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg flex items-center gap-1">🌐 {selectedUserStats.website}</span>}
                                     </div>
                                 </div>
-                                <div className="flex flex-col gap-2 mt-4 md:mt-0 w-full md:w-auto">
-                                    <button onClick={() => openModal('profile', selectedUserStats)} className="text-blue-600 bg-blue-100 hover:bg-blue-200 px-4 py-2 rounded-xl text-xs font-bold transition flex gap-2 items-center justify-center"><Edit size={14}/> ویرایش پروفایل</button>
-                                    <button onClick={() => openModal('meeting', { username: selectedUserStats.username })} className="bg-teal-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-teal-200 flex items-center gap-2 hover:bg-teal-600 transition justify-center"><Clock size={16}/> تنظیم جلسه</button>
+                                <div className="flex flex-wrap gap-2 mt-4 md:mt-0 w-full md:w-auto justify-center md:justify-end">
+                                    <button onClick={() => openModal('profile', selectedUserStats)} className="text-blue-600 bg-blue-100 hover:bg-blue-200 px-4 py-2 rounded-xl text-xs font-bold transition flex gap-2 items-center justify-center"><Edit size={14}/> ویرایش</button>
+                                    <button onClick={() => openModal('meeting', { username: selectedUserStats.username })} className="bg-teal-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-teal-200 flex items-center gap-2 hover:bg-teal-600 transition justify-center"><Clock size={16}/> جلسه</button>
+                                    <button onClick={() => openModal('issue', { username: selectedUserStats.username })} className="bg-rose-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-rose-200 flex items-center gap-2 hover:bg-rose-600 transition justify-center"><AlertTriangle size={16}/> مشکل</button>
+                                    <button onClick={() => openModal('frozen', { username: selectedUserStats.username })} className="bg-cyan-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-cyan-200 flex items-center gap-2 hover:bg-cyan-600 transition justify-center"><Snowflake size={16}/> فریز</button>
+                                    <button onClick={() => openModal('refund', { username: selectedUserStats.username })} className="bg-amber-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-amber-200 flex items-center gap-2 hover:bg-amber-600 transition justify-center"><CreditCard size={16}/> بازگشت وجه</button>
+                                    <button onClick={() => openModal('feature', { username: selectedUserStats.username })} className="bg-purple-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-purple-200 flex items-center gap-2 hover:bg-purple-600 transition justify-center"><Lightbulb size={16}/> فیچر</button>
                                 </div>
                             </div>
                         </div>

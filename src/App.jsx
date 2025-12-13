@@ -133,6 +133,7 @@ export default function App() {
   const [issueViewMode, setIssueViewMode] = useState('table'); 
   const [featureViewMode, setFeatureViewMode] = useState('table');
   const [frozenViewMode, setFrozenViewMode] = useState('table');
+  const [refundViewMode, setRefundViewMode] = useState('table');
   const [expandedChart, setExpandedChart] = useState(null); 
   const [historyModalData, setHistoryModalData] = useState(null);
 
@@ -327,6 +328,16 @@ export default function App() {
   const handleAiChurnAnalysis = async (user) => { setAiLoading(true); const prompt = `User: ${user.username}, Count: ${user.count}, Issues: ${JSON.stringify(user.issues)}`; const res = await callVardastAI(prompt); setAiLoading(false); if (res) alert(res); };
   const chartData = useMemo(() => { const acc = {}; filteredIssues.forEach((i) => { const date = normalizeDate(i); const d = date ? format(date, 'yyyy-MM-dd') : 'نامشخص'; acc[d] = (acc[d] || 0) + 1; }); return Object.keys(acc).map((d) => ({ date: d, count: acc[d] })).sort((a,b) => a.date.localeCompare(b.date)); }, [filteredIssues]);
 
+  const handleGenerateFeatureTitle = async () => {
+      if (!formData.desc_text) return alert('لطفا توضیحات را وارد کنید');
+      setAiLoading(true);
+      const context = features.map(f => `Title: ${f.title}, Desc: ${f.desc_text}`).join('\n---\n');
+      const prompt = `Context (Existing Features):\n${context}\n\nNew Feature Description: "${formData.desc_text}"\n\nTask: Generate a short, concise Persian title for this new feature based on its description. Return ONLY the title.`;
+      const res = await callVardastAI(prompt);
+      setAiLoading(false);
+      if (res) setFormData(prev => ({ ...prev, title: res }));
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     const isEdit = !!editingId;
@@ -357,7 +368,7 @@ export default function App() {
       if (!isEdit) payload.created_at = createdTimestamp;
     } else if (modalType === 'refund') {
       table = 'refunds';
-      payload = { ...commonFields, reason: formData.reason, duration: formData.duration, category: formData.category, action: formData.action || 'در حال بررسی', suggestion: formData.suggestion, can_return: formData.can_return, sales_source: formData.sales_source, ops_note: formData.ops_note };
+      payload = { ...commonFields, reason: formData.reason, duration: formData.duration, category: formData.category, action: formData.action || 'در حال بررسی', status: formData.status || 'در بررسی', suggestion: formData.suggestion, can_return: formData.can_return, sales_source: formData.sales_source, ops_note: formData.ops_note };
       if (!isEdit) payload.requested_at = createdTimestamp;
     } else if (modalType === 'profile') {
       table = 'profiles';
@@ -365,7 +376,7 @@ export default function App() {
       if (!isEdit) payload.created_at = createdTimestamp;
     } else if (modalType === 'meeting') {
         table = 'meetings';
-        payload = { username: formData.username, date: formData.date ? (formData.date.toDate ? formData.date.toDate().toISOString() : new Date(formData.date).toISOString()) : new Date().toISOString(), meeting_time: formData.meeting_time, reason: formData.reason, result: formData.result, held: formData.held === true || formData.held === 'true' };
+        payload = { username: formData.username, date: formData.date ? (formData.date.toDate ? formData.date.toDate().toISOString() : new Date(formData.date).toISOString()) : new Date().toISOString(), meeting_time: formData.meeting_time, reason: formData.reason, result: formData.result, held: formData.held === true || formData.held === 'true', created_by: formData.created_by || loggedInUser };
         if (!isEdit) payload.created_at = createdTimestamp;
     } else if (modalType === 'onboarding') {
       table = 'onboardings';
@@ -386,13 +397,7 @@ export default function App() {
       if (!isEdit && payload.meeting_date) { 
           createMeeting(payload.meeting_date, 'اولیه');
       } else if (isEdit) {
-          // Check if dates changed (logic handled after finding old record below, but simpler to always check formData vs logic)
-          // We need to fetch the old record to compare or just trust the user action. 
-          // However, since we don't have the old record in scope easily without fetching, 
-          // we can rely on `formData` being populated with the existing record when Modal opened.
-          // BUT `handleSave` has `formData`. 
           const oldRecord = onboardings.find(r => r.id === editingId);
-          
           if (payload.meeting_date && (!oldRecord.meeting_date || new Date(payload.meeting_date).getTime() !== new Date(oldRecord.meeting_date).getTime())) {
                createMeeting(payload.meeting_date, 'ویرایش شده');
           }
@@ -406,7 +411,7 @@ export default function App() {
         setIsModalOpen(false); setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); return;
     }
     
-    // Audit Logic - Ensure loggedInUser is used
+    // Audit Logic
     const currentUser = loggedInUser || 'Unknown';
     
     if (isEdit) {
@@ -425,7 +430,7 @@ export default function App() {
         payload.last_updated_by = currentUser;
         payload.last_updated_at = new Date().toISOString();
     } else {
-        payload.created_by = currentUser;
+        payload.created_by = payload.created_by || currentUser;
         payload.history = [];
     }
 
@@ -461,6 +466,9 @@ export default function App() {
             last_updated_by: loggedInUser || 'Admin',
             last_updated_at: new Date().toISOString()
         };
+        if (table === 'issues' && newStatus === 'حل‌شده') {
+            payload.flag = null;
+        }
     }
 
     const { error } = await supabase.from(table).update(payload).eq('id', id);
@@ -468,6 +476,8 @@ export default function App() {
       if (table === 'issues') { setIssues(prev => prev.map(i => i.id.toString() === id ? { ...i, ...payload } : i)); } 
       else if (table === 'features') { setFeatures(prev => prev.map(f => f.id.toString() === id ? { ...f, ...payload } : f)); }
       else if (table === 'onboardings') { setOnboardings(prev => prev.map(o => o.id.toString() === id ? { ...o, ...payload } : o)); }
+      else if (table === 'refunds') { setRefunds(prev => prev.map(r => r.id.toString() === id ? { ...r, ...payload } : r)); }
+      else if (table === 'frozen') { setFrozen(prev => prev.map(f => f.id.toString() === id ? { ...f, ...payload } : f)); }
     }
   };
 
@@ -628,7 +638,7 @@ export default function App() {
                 </div>
                 <button onClick={() => openModal('issue')} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-200 flex items-center gap-2"><Plus size={16}/> ثبت مشکل</button>
               </div>
-              {issueViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredIssues} onStatusChange={(id, status) => handleStatusChange(id, status, 'issues')} columns={{'باز': 'باز', 'در حال بررسی': 'در حال بررسی', 'حل‌شده': 'حل‌شده'}} navigateToProfile={navigateToProfile} openModal={openModal} type="issue" /></div>) : (<div className="bg-white rounded-2xl border overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4">تاریخ</th><th className="p-4"></th></tr></thead><tbody>{filteredIssues.map(row => (<tr key={row.id} className={`border-b last:border-0 hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-blue-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4"><div className="flex items-center gap-2">{row.technical_review && <div className="bg-indigo-100 p-1 rounded-md text-indigo-600" title="بررسی فنی"><Wrench size={12}/></div>}<span className="truncate max-w-xs">{row.desc_text}</span></div></td><td className="p-4"><span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-600 text-xs border border-blue-100">{row.status}</span></td><td className="p-4 text-xs text-gray-500 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4 font-mono text-xs text-gray-400">{formatDate(row.created_at)}</td><td className="p-4 text-left"><button onClick={() => openModal('issue', row)} className="text-gray-400 hover:text-blue-600"><Edit size={16}/></button></td></tr>))}</tbody></table></div>)}
+              {issueViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredIssues} onStatusChange={(id, status) => handleStatusChange(id, status, 'issues')} columns={{'باز': 'باز', 'در حال بررسی': 'در حال بررسی', 'حل‌شده': 'حل‌شده'}} navigateToProfile={navigateToProfile} openModal={openModal} type="issue" setHistoryModalData={setHistoryModalData} /></div>) : (<div className="bg-white rounded-2xl border overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4">تاریخ</th><th className="p-4"></th></tr></thead><tbody>{filteredIssues.map(row => (<tr key={row.id} className={`border-b last:border-0 hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-blue-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4"><div className="flex items-center gap-2">{row.technical_review && <div className="bg-indigo-100 p-1 rounded-md text-indigo-600" title="بررسی فنی"><Wrench size={12}/></div>}<span className="truncate max-w-xs">{row.desc_text}</span></div></td><td className="p-4"><span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-600 text-xs border border-blue-100">{row.status}</span></td><td className="p-4 text-xs text-gray-500 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4 font-mono text-xs text-gray-400">{formatDate(row.created_at)}</td><td className="p-4 text-left"><button onClick={() => openModal('issue', row)} className="text-gray-400 hover:text-blue-600"><Edit size={16}/></button></td></tr>))}</tbody></table></div>)}
             </section>
           )}
           {activeTab === 'features' && (
@@ -637,7 +647,7 @@ export default function App() {
                 <div className="flex gap-2 bg-slate-100 p-1 rounded-xl"><button onClick={() => setFeatureViewMode('table')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${featureViewMode === 'table' ? 'bg-white shadow text-purple-600' : 'text-gray-500'}`}><List size={16}/> جدول</button><button onClick={() => setFeatureViewMode('kanban')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${featureViewMode === 'kanban' ? 'bg-white shadow text-purple-600' : 'text-gray-500'}`}><Columns size={16}/> کانبان</button></div>
                 <div className="flex gap-2"><button onClick={() => { setActiveTab('ai-analysis'); }} className="bg-white text-purple-600 px-4 py-2 rounded-xl text-sm font-bold border border-purple-200 hover:bg-purple-50 flex items-center gap-2"><Sparkles size={16}/> تحلیل هوشمند</button><button onClick={() => openModal('feature')} className="bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-purple-200 flex items-center gap-2"><Plus size={16}/> ثبت فیچر</button></div>
               </div>
-              {featureViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredFeatures} onStatusChange={(id, status) => handleStatusChange(id, status, 'features')} columns={{'بررسی نشده': 'بررسی نشده', 'در تحلیل': 'در تحلیل', 'در توسعه': 'در توسعه', 'انجام شد': 'انجام شد'}} navigateToProfile={navigateToProfile} openModal={openModal} type="feature" /></div>) : (<div className="bg-white rounded-2xl border overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">عنوان</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4"></th></tr></thead><tbody>{filteredFeatures.map(row => (<tr key={row.id} className={`border-b last:border-0 hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-purple-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4 font-bold">{row.title}</td><td className="p-4 truncate max-w-xs">{row.desc_text}</td><td className="p-4"><span className="px-2 py-1 rounded-lg bg-purple-50 text-purple-600 text-xs border border-purple-100">{row.status}</span></td><td className="p-4 text-xs text-gray-500 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4 text-left"><button onClick={() => openModal('feature', row)} className="text-gray-400 hover:text-purple-600"><Edit size={16}/></button></td></tr>))}</tbody></table></div>)}
+              {featureViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredFeatures} onStatusChange={(id, status) => handleStatusChange(id, status, 'features')} columns={{'بررسی نشده': 'بررسی نشده', 'در تحلیل': 'در تحلیل', 'در توسعه': 'در توسعه', 'انجام شد': 'انجام شد'}} navigateToProfile={navigateToProfile} openModal={openModal} type="feature" setHistoryModalData={setHistoryModalData} /></div>) : (<div className="bg-white rounded-2xl border overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">عنوان</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4"></th></tr></thead><tbody>{filteredFeatures.map(row => (<tr key={row.id} className={`border-b last:border-0 hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-purple-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4 font-bold">{row.title}</td><td className="p-4 truncate max-w-xs">{row.desc_text}</td><td className="p-4"><span className="px-2 py-1 rounded-lg bg-purple-50 text-purple-600 text-xs border border-purple-100">{row.status}</span></td><td className="p-4 text-xs text-gray-500 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4 text-left"><button onClick={() => openModal('feature', row)} className="text-gray-400 hover:text-purple-600"><Edit size={16}/></button></td></tr>))}</tbody></table></div>)}
             </section>
           )}
           {activeTab === 'users' && (profileSearch ? <UserProfile usersData={allUsers} issues={issues} frozen={frozen} features={features} refunds={refunds} onboardings={onboardings} meetings={meetings} openModal={openModal} profileSearch={profileSearch} setProfileSearch={setProfileSearch} /> : <UsersTab users={allUsers} navigateToProfile={navigateToProfile} />)}
@@ -648,15 +658,35 @@ export default function App() {
                 <div className="flex gap-2 bg-slate-100 p-1 rounded-xl"><button onClick={() => setFrozenViewMode('table')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${frozenViewMode === 'table' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><List size={16}/> جدول</button><button onClick={() => setFrozenViewMode('kanban')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${frozenViewMode === 'kanban' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><Columns size={16}/> کانبان</button></div>
                 <button onClick={() => openModal('frozen')} className="bg-gray-800 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2"><Plus size={16}/> ثبت فریز</button>
               </div>
-              {frozenViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredFrozen} onStatusChange={(id, status) => handleStatusChange(id, status, 'frozen')} columns={{'فریز': 'فریز', 'در حال رفع': 'در حال رفع', 'رفع شد': 'رفع شد'}} navigateToProfile={navigateToProfile} openModal={openModal} type="frozen" /></div>) : (<div className="bg-white rounded-2xl border overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4"></th></tr></thead><tbody>{filteredFrozen.map(row => (<tr key={row.id} className={`border-b hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-blue-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4">{row.desc_text}</td><td className="p-4">{row.status}</td><td className="p-4 text-xs text-gray-500 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4"><button onClick={() => openModal('frozen', row)}><Edit size={16} className="text-gray-400"/></button></td></tr>))}</tbody></table></div>)}
+              {frozenViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredFrozen} onStatusChange={(id, status) => handleStatusChange(id, status, 'frozen')} columns={{'فریز': 'فریز', 'در حال رفع': 'در حال رفع', 'رفع شد': 'رفع شد'}} navigateToProfile={navigateToProfile} openModal={openModal} type="frozen" setHistoryModalData={setHistoryModalData} /></div>) : (<div className="bg-white rounded-2xl border overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4"></th></tr></thead><tbody>{filteredFrozen.map(row => (<tr key={row.id} className={`border-b hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-blue-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4">{row.desc_text}</td><td className="p-4">{row.status}</td><td className="p-4 text-xs text-gray-500 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4"><button onClick={() => openModal('frozen', row)}><Edit size={16} className="text-gray-400"/></button></td></tr>))}</tbody></table></div>)}
              </div>
           )}
           {activeTab === 'refunds' && (
-            <div className="bg-white rounded-2xl border overflow-hidden p-6 liquid-glass">
-                <div className="flex justify-between mb-4"><h2 className="font-bold text-lg">درخواست‌های بازگشت وجه</h2><button onClick={() => openModal('refund')} className="bg-gray-800 text-white px-4 py-2 rounded-xl text-sm font-bold"><Plus size={16}/></button></div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4"></th></tr></thead><tbody>{filteredRefunds.map(row => (<tr key={row.id} className={`border-b hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-blue-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4">{row.reason}</td><td className="p-4">{row.action}</td><td className="p-4 text-xs text-gray-500 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4"><button onClick={() => openModal('refund', row)}><Edit size={16} className="text-gray-400"/></button></td></tr>))}</tbody></table>
+            <div className="h-full flex flex-col">
+                <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-2xl border shadow-sm">
+                    <div className="flex gap-2 bg-slate-100 p-1 rounded-xl">
+                        <button onClick={() => setRefundViewMode('table')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${refundViewMode === 'table' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><List size={16}/> جدول</button>
+                        <button onClick={() => setRefundViewMode('kanban')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${refundViewMode === 'kanban' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><Columns size={16}/> کانبان</button>
+                    </div>
+                    <button onClick={() => openModal('refund')} className="bg-gray-800 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2"><Plus size={16}/> ثبت بازگشت وجه</button>
                 </div>
+                {refundViewMode === 'kanban' ? (
+                     <div className="flex-1 overflow-hidden">
+                       <KanbanBoard 
+                           items={filteredRefunds} 
+                           onStatusChange={(id, status) => handleStatusChange(id, status, 'refunds')} 
+                           columns={{'بازپرداخت شد': 'بازپرداخت شد', 'در بررسی': 'در بررسی', 'رد شد': 'رد شد'}} 
+                           navigateToProfile={navigateToProfile} 
+                           openModal={openModal} 
+                           type="refund"
+                           setHistoryModalData={setHistoryModalData}
+                       />
+                     </div>
+                ) : (
+                    <div className="bg-white rounded-2xl border overflow-hidden p-6 liquid-glass overflow-x-auto">
+                        <table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 text-gray-500 border-b"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4"></th></tr></thead><tbody>{filteredRefunds.map(row => (<tr key={row.id} className={`border-b hover:bg-slate-50 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-blue-600" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4">{row.reason}</td><td className="p-4">{row.action}</td><td className="p-4 text-xs text-gray-500 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4"><button onClick={() => openModal('refund', row)}><Edit size={16} className="text-gray-400"/></button></td></tr>))}</tbody></table>
+                    </div>
+                )}
             </div>
           )}
         </div>
@@ -797,7 +827,17 @@ export default function App() {
                         {/* Issue Specific */}
                         {modalType === 'issue' && (
                             <>
-                                <select value={formData.status || 'باز'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white"><option value="باز">باز</option><option value="در حال بررسی">در حال بررسی</option><option value="حل‌شده">حل‌شده</option></select>
+                                <div className="grid grid-cols-2 gap-3">
+                                   <select value={formData.status || 'باز'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white"><option value="باز">باز</option><option value="در حال بررسی">در حال بررسی</option><option value="حل‌شده">حل‌شده</option></select>
+                                   <select value={formData.module || ''} onChange={(e) => setFormData({...formData, module: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white">
+                                      <option value="">بخش مربوطه...</option>
+                                      {['پرامپت', 'ویزارد', 'دایرکت هوشمند', 'کامنت هوشمند', 'اتصال تلگرام', 'اتصال اینستاگرام', 'اتصال وبسایت', 'نیمچت', 'گزارشات', 'UI/UX', 'خواندت محصولات از وبسایت', 'استوری‌های هوشمند', 'اکسس توکن منقضی شده', 'فالو اجباری', 'ویجت', 'سایر'].map(o => <option key={o} value={o}>{o}</option>)}
+                                   </select>
+                                </div>
+                                <select value={formData.type || ''} onChange={(e) => setFormData({...formData, type: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white">
+                                    <option value="">نوع مشکل...</option>
+                                    {['باگ فنی', 'خطای کاربر', 'کندی سیستم', 'محدودیت API', 'طراحی UX', 'خطای مشتری', 'سایر'].map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
                                 <div className="relative">
                                     <textarea rows="3" placeholder="شرح مشکل..." value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
                                     <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, desc_text: (p.desc_text || '') + ' ' + text}))} /></div>
@@ -822,7 +862,10 @@ export default function App() {
                                      <label className="text-xs text-gray-500 font-bold">ثبت کننده (درخواست دهنده)</label>
                                      <input placeholder="نام ثبت کننده" value={loggedInUser} disabled className="border p-3 rounded-xl text-sm w-full bg-gray-100 dark:bg-slate-800 dark:border-slate-600 dark:text-gray-400 cursor-not-allowed" />
                                 </div>
-                                <input placeholder="عنوان فیچر" value={formData.title || ''} onChange={(e) => setFormData({...formData, title: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+                                <div className="relative flex items-center gap-2">
+                                     <input placeholder="عنوان فیچر" value={formData.title || ''} onChange={(e) => setFormData({...formData, title: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+                                     <button type="button" onClick={handleGenerateFeatureTitle} disabled={aiLoading} className="p-3 bg-purple-100 text-purple-600 rounded-xl hover:bg-purple-200 transition" title="تولید عنوان با هوش مصنوعی">{aiLoading ? <Loader2 size={16} className="animate-spin"/> : <Sparkles size={16}/>}</button>
+                                </div>
                                 <div className="relative">
                                     <textarea rows="3" placeholder="توضیحات..." value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
                                     <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, desc_text: (p.desc_text || '') + ' ' + text}))} /></div>
@@ -847,6 +890,12 @@ export default function App() {
                                         </div>
                                         <input type="time" value={formData.meeting_time || ''} onChange={(e) => setFormData({...formData, meeting_time: e.target.value})} className="border p-3 rounded-xl text-sm w-24 outline-none focus:border-blue-500"/>
                                     </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-500 font-medium">برگزار کننده</label>
+                                    <select value={formData.created_by || loggedInUser} onChange={(e) => setFormData({...formData, created_by: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white">
+                                        {ALLOWED_USERS.map(u => <option key={u} value={u}>{u}</option>)}
+                                    </select>
                                 </div>
                                 <div className="relative">
                                     <textarea rows="2" placeholder="علت جلسه..." value={formData.reason || ''} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
@@ -874,10 +923,13 @@ export default function App() {
                         )}
                         
                          {modalType === 'refund' && (
-                             <div className="relative">
-                                 <textarea rows="3" placeholder="توضیحات..." value={formData.reason || ''} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
-                                 <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, reason: (p.reason || '') + ' ' + text}))} /></div>
-                             </div>
+                             <>
+                                <select value={formData.status || 'در بررسی'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white"><option value="بازپرداخت شد">بازپرداخت شد</option><option value="در بررسی">در بررسی</option><option value="رد شد">رد شد</option></select>
+                                <div className="relative">
+                                    <textarea rows="3" placeholder="توضیحات..." value={formData.reason || ''} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
+                                    <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, reason: (p.reason || '') + ' ' + text}))} /></div>
+                                </div>
+                             </>
                         )}
                     </>
                 )}
