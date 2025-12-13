@@ -103,13 +103,21 @@ const INITIAL_FORM_DATA = {
 const useTailwind = () => {
   useEffect(() => {
     if (!document.getElementById('tailwind-cdn')) {
-      const config = document.createElement('script');
-      config.innerHTML = `window.tailwind = { config: { darkMode: 'class' } }`;
-      document.head.appendChild(config);
-
       const script = document.createElement('script');
       script.id = 'tailwind-cdn';
       script.src = 'https://cdn.tailwindcss.com';
+      script.onload = () => {
+        window.tailwind.config = {
+          darkMode: 'class',
+          theme: {
+            extend: {
+              colors: {
+                slate: { 750: '#2d3748', 850: '#1a202c', 950: '#0f172a' } // Custom dark shades
+              }
+            }
+          }
+        };
+      };
       document.head.appendChild(script);
       
       const style = document.createElement('style');
@@ -332,7 +340,8 @@ const UserSearchInput = ({ value, onChange, onSelect, usersData = [] }) => {
       (u.username && u.username.toLowerCase().includes(lower)) ||
       (u.phone_number && u.phone_number.includes(lower)) ||
       (u.instagram_username && u.instagram_username.toLowerCase().includes(lower)) ||
-      (u.telegram_id && u.telegram_id.toLowerCase().includes(lower))
+      (u.telegram_id && u.telegram_id.toLowerCase().includes(lower)) ||
+      (u.website && u.website.toLowerCase().includes(lower))
     ).slice(0, 5); 
   }, [term, usersData]);
 
@@ -635,14 +644,34 @@ const UserProfile = ({ usersData = [], issues, frozen, features, refunds, onboar
     const [suggestions, setSuggestions] = useState([]);
     useEffect(() => { setSearch(profileSearch || ''); }, [profileSearch]);
     useEffect(() => { const found = (usersData || []).find(u => u.username === search); setSelectedUserStats(found || null); }, [search, usersData]);
-    const handleSearch = (val) => { setSearch(val); setProfileSearch(val); if (val) { const lowerVal = val.toLowerCase(); setSuggestions((usersData || []).filter(u => u.username.toLowerCase().includes(lowerVal) || (u.phone_number && u.phone_number.includes(lowerVal))).slice(0, 5)); } else { setSuggestions([]); } };
+    const handleSearch = (val) => { setSearch(val); setProfileSearch(val); if (val) { const lowerVal = val.toLowerCase(); setSuggestions((usersData || []).filter(u => u.username.toLowerCase().includes(lowerVal) || (u.phone_number && u.phone_number.includes(lowerVal)) || (u.instagram_username && u.instagram_username.toLowerCase().includes(lowerVal)) || (u.telegram_id && u.telegram_id.toLowerCase().includes(lowerVal)) || (u.website && u.website.toLowerCase().includes(lowerVal))).slice(0, 5)); } else { setSuggestions([]); } };
     const userRecords = useMemo(() => { if (!search) return []; return [...issues.map(x => ({ ...x, src: 'issue', date: x.created_at })), ...frozen.map(x => ({ ...x, src: 'frozen', date: x.frozen_at })), ...features.map(x => ({ ...x, src: 'feature', date: x.created_at })), ...refunds.map(x => ({ ...x, src: 'refund', date: x.requested_at })), ...onboardings.map(x => ({ ...x, src: 'onboarding', date: x.created_at })), ...meetings.map(x => ({ ...x, src: 'meeting', date: x.date }))].filter(r => r.username === search).sort((a, b) => (b.date || '').localeCompare(a.date || '')); }, [search, issues, frozen, features, refunds, onboardings, meetings]);
     return (
         <div className="w-full max-w-5xl mx-auto space-y-6">
-           <div className="bg-white/80 dark:bg-slate-800/80 dark:border-slate-700 backdrop-blur-md p-6 rounded-3xl shadow-sm border border-white relative z-20"><div className="flex justify-between items-center mb-3"><h2 className="font-bold text-gray-800 dark:text-white flex items-center gap-2"><User size={20} className="text-blue-600"/> پروفایل کاربر</h2><button onClick={() => openModal('profile')} className="bg-blue-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-lg shadow-blue-200 flex items-center gap-1 hover:bg-blue-700 transition"><Plus size={14}/> پروفایل جدید</button></div><div className="relative"><div className="flex items-center border border-gray-200 dark:border-slate-600 rounded-2xl bg-gray-50/50 dark:bg-slate-700/50 overflow-hidden focus-within:ring-2 ring-blue-100 transition-all"><div className="pl-3 pr-4 text-gray-400"><Search size={18} /></div><input placeholder="جستجو..." value={search} className="w-full p-3 bg-transparent outline-none text-sm dark:text-white" onChange={(e) => handleSearch(e.target.value)} /></div>{suggestions.length > 0 && search !== suggestions[0]?.username && (<div className="absolute top-full right-0 left-0 bg-white shadow-xl rounded-2xl mt-2 max-h-60 overflow-auto border z-50 p-1">{suggestions.map((u) => (<div key={u.username} onClick={() => handleSearch(u.username)} className="p-3 hover:bg-blue-50 cursor-pointer rounded-xl text-sm flex gap-3 items-center transition-colors"><UserAvatar name={u.username} size="sm" /><div className="flex flex-col"><span className="font-semibold text-gray-700">{u.username}</span></div></div>))}</div>)}</div></div>
+           <div className="bg-white/80 dark:bg-slate-800/80 dark:border-slate-700 backdrop-blur-md p-6 rounded-3xl shadow-sm border border-white relative z-20"><div className="flex justify-between items-center mb-3"><h2 className="font-bold text-gray-800 dark:text-white flex items-center gap-2"><User size={20} className="text-blue-600"/> پروفایل کاربر</h2><button onClick={() => openModal('profile')} className="bg-blue-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-lg shadow-blue-200 flex items-center gap-1 hover:bg-blue-700 transition"><Plus size={14}/> پروفایل جدید</button></div><div className="relative"><div className="flex items-center border border-gray-200 dark:border-slate-600 rounded-2xl bg-gray-50/50 dark:bg-slate-700/50 overflow-hidden focus-within:ring-2 ring-blue-100 transition-all"><div className="pl-3 pr-4 text-gray-400"><Search size={18} /></div><input placeholder="جستجو (نام، تماس، اینستاگرام، تلگرام، سایت)..." value={search} className="w-full p-3 bg-transparent outline-none text-sm dark:text-white" onChange={(e) => handleSearch(e.target.value)} /></div>{suggestions.length > 0 && search !== suggestions[0]?.username && (<div className="absolute top-full right-0 left-0 bg-white shadow-xl rounded-2xl mt-2 max-h-60 overflow-auto border z-50 p-1">{suggestions.map((u) => (<div key={u.username} onClick={() => handleSearch(u.username)} className="p-3 hover:bg-blue-50 cursor-pointer rounded-xl text-sm flex gap-3 items-center transition-colors"><UserAvatar name={u.username} size="sm" /><div className="flex flex-col"><span className="font-semibold text-gray-700">{u.username}</span><div className="flex flex-wrap gap-2 text-[10px] text-gray-400">{u.phone_number && <span>{u.phone_number}</span>}{u.instagram_username && <span>IG: {u.instagram_username}</span>}</div></div></div>))}</div>)}</div></div>
            {selectedUserStats ? (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="bg-gradient-to-l from-blue-50 to-white dark:from-slate-800 dark:to-slate-900 p-6 rounded-3xl shadow-sm border border-blue-100 dark:border-slate-700 flex flex-col md:flex-row items-center md:items-start gap-6 relative overflow-hidden"><UserAvatar name={selectedUserStats.username} size="lg" /><div className="flex-1 text-center md:text-right z-10 w-full"><div className="flex flex-col md:flex-row justify-between items-center mb-4"><div><h2 className="text-2xl font-black text-gray-800 dark:text-white mb-1">{selectedUserStats.username}</h2></div><button onClick={() => openModal('profile', selectedUserStats)} className="text-blue-600 bg-blue-100 hover:bg-blue-200 px-4 py-2 rounded-xl text-xs font-bold transition mt-3 md:mt-0 flex gap-2 items-center"><Edit size={14}/> ویرایش پروفایل</button></div><div className="mt-4 flex gap-2 justify-center md:justify-start"><button onClick={() => openModal('meeting', { username: selectedUserStats.username })} className="bg-teal-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-teal-200 flex items-center gap-2 hover:bg-teal-600 transition"><Clock size={16}/> ست کردن جلسه</button></div></div></div>
+                    <div className="bg-gradient-to-l from-blue-50 to-white dark:from-slate-800 dark:to-slate-900 p-6 rounded-3xl shadow-sm border border-blue-100 dark:border-slate-700 flex flex-col md:flex-row items-center md:items-start gap-6 relative overflow-hidden">
+                        <UserAvatar name={selectedUserStats.username} size="lg" />
+                        <div className="flex-1 text-center md:text-right z-10 w-full">
+                            <div className="flex flex-col md:flex-row justify-between items-start mb-4">
+                                <div>
+                                    <h2 className="text-2xl font-black text-gray-800 dark:text-white mb-2">{selectedUserStats.username}</h2>
+                                    {selectedUserStats.bio && <p className="text-sm text-gray-500 dark:text-gray-400 mb-3 max-w-lg leading-relaxed">{selectedUserStats.bio}</p>}
+                                    <div className="flex flex-wrap gap-3 justify-center md:justify-start text-xs text-gray-600 dark:text-gray-300">
+                                        {selectedUserStats.phone_number && <span className="px-2 py-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg flex items-center gap-1">📞 {selectedUserStats.phone_number}</span>}
+                                        {selectedUserStats.instagram_username && <span className="px-2 py-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg flex items-center gap-1">📸 {selectedUserStats.instagram_username}</span>}
+                                        {selectedUserStats.telegram_id && <span className="px-2 py-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg flex items-center gap-1">✈️ {selectedUserStats.telegram_id}</span>}
+                                        {selectedUserStats.website && <span className="px-2 py-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg flex items-center gap-1">🌐 {selectedUserStats.website}</span>}
+                                    </div>
+                                </div>
+                                <div className="flex flex-col gap-2 mt-4 md:mt-0 w-full md:w-auto">
+                                    <button onClick={() => openModal('profile', selectedUserStats)} className="text-blue-600 bg-blue-100 hover:bg-blue-200 px-4 py-2 rounded-xl text-xs font-bold transition flex gap-2 items-center justify-center"><Edit size={14}/> ویرایش پروفایل</button>
+                                    <button onClick={() => openModal('meeting', { username: selectedUserStats.username })} className="bg-teal-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-teal-200 flex items-center gap-2 hover:bg-teal-600 transition justify-center"><Clock size={16}/> تنظیم جلسه</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <div className="bg-white/80 dark:bg-slate-800/80 dark:border-slate-700 backdrop-blur p-6 rounded-3xl shadow-sm border border-white"><h3 className="font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2"><History size={18} className="text-gray-500"/> تاریخچه فعالیت‌ها</h3>{userRecords.length > 0 ? (<div className="space-y-6 relative before:absolute before:right-6 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">{userRecords.map((r, i) => (<div key={i} className="relative pr-10"><div className={`absolute right-4 top-1 w-4 h-4 rounded-full border-2 border-white shadow-sm z-10 ${r.src === 'issue' ? 'bg-amber-400' : 'bg-blue-400'}`}></div><div className="bg-slate-50 dark:bg-slate-900 border dark:border-slate-800 rounded-2xl p-4 hover:bg-white dark:hover:bg-slate-800 hover:shadow-md transition"><div className="flex flex-wrap items-center justify-between gap-2 mb-2"><div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400"><span className="font-mono bg-white dark:bg-slate-800 px-2 py-0.5 rounded border dark:border-slate-700">{formatDate(r.date)}</span><span className="px-2 py-0.5 rounded-full border text-[10px]">{r.src}</span></div><button onClick={() => openModal(r.src, r)} className="text-xs px-3 py-1.5 rounded-xl border bg-white dark:bg-slate-800 dark:text-white hover:bg-blue-600 hover:text-white transition opacity-0 group-hover:opacity-100">ویرایش</button></div><div className="font-bold text-sm text-gray-800 dark:text-white mb-2">{r.desc_text || r.title || r.reason}</div></div></div>))}</div>) : (<div className="text-center text-gray-400 py-10">هیچ سابقه‌ای یافت نشد.</div>)}</div>
                 </div>
            ) : null}
@@ -702,6 +731,8 @@ export default function App() {
             if(r.phone_number) map[r.username].phone_number = r.phone_number;
             if(r.instagram_username) map[r.username].instagram_username = r.instagram_username;
             if(r.telegram_id) map[r.username].telegram_id = r.telegram_id;
+            if(r.website) map[r.username].website = r.website;
+            if(r.bio) map[r.username].bio = r.bio;
         }
       });
     };
@@ -926,7 +957,13 @@ export default function App() {
       payload = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, telegram_id: formData.telegram_id, has_website: formData.has_website === 'true' || formData.has_website === true, progress: Number(formData.progress), initial_call_status: formData.initial_call_status, conversation_summary: formData.conversation_summary, call_date: formData.call_date, meeting_date: formData.meeting_date, meeting_note: formData.meeting_note, followup_date: formData.followup_date, followup_note: formData.followup_note };
       if (!isEdit) payload.created_at = createdTimestamp;
       if (!isEdit && payload.meeting_date) { 
-          const meetingPayload = { username: payload.username, date: payload.meeting_date, meeting_time: '10:00', reason: 'جلسه آنبوردینگ (خودکار)', created_by: loggedInUser, held: false, history: [] }; 
+          // Parse meeting date if it's coming from DatePicker
+          let mDate = payload.meeting_date;
+          if (mDate && typeof mDate !== 'string') {
+              if (mDate.toDate) mDate = mDate.toDate().toISOString();
+              else if (mDate instanceof Date) mDate = mDate.toISOString();
+          }
+          const meetingPayload = { username: payload.username, date: mDate, meeting_time: '10:00', reason: 'جلسه آنبوردینگ (خودکار)', created_by: loggedInUser, held: false, history: [] }; 
           supabase.from('meetings').insert([meetingPayload]).then(({ error }) => { if (error) console.error('Error auto-creating meeting:', error); }); 
       }
     }
@@ -1187,7 +1224,16 @@ export default function App() {
                             <h4 className="font-bold text-gray-700 dark:text-gray-200 text-xs">۱. تماس اولیه</h4>
                             <div className="grid grid-cols-2 gap-2">
                                 <select value={formData.initial_call_status || ''} onChange={(e) => setFormData({...formData, initial_call_status: e.target.value})} className="border p-2 rounded-lg text-xs w-full dark:bg-slate-800 dark:border-slate-600 dark:text-white"><option value="">وضعیت...</option><option value="پاسخ داد">پاسخ داد</option><option value="پاسخ نداد">پاسخ نداد</option><option value="رد تماس">رد تماس</option></select>
-                                <input type="text" placeholder="تاریخ (۱۴۰۳/...)" value={formData.call_date || ''} onChange={(e) => setFormData({...formData, call_date: e.target.value})} className="border p-2 rounded-lg text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-white"/>
+                                <div className="w-full">
+                                     <DatePicker 
+                                        calendar={persian} 
+                                        locale={persian_fa} 
+                                        value={formData.call_date || ''} 
+                                        onChange={(date) => setFormData({...formData, call_date: date})}
+                                        placeholder="تاریخ تماس"
+                                        inputClass="w-full border p-2 rounded-lg text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-white outline-none"
+                                     />
+                                </div>
                             </div>
                             <div className="relative">
                                 <textarea placeholder="خلاصه مکالمه..." rows="2" value={formData.conversation_summary || ''} onChange={(e) => setFormData({...formData, conversation_summary: e.target.value})} className="w-full border p-2 rounded-lg text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-white"/>
@@ -1198,7 +1244,16 @@ export default function App() {
                         {/* Section 2: Meeting */}
                         <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded-xl space-y-2 border dark:border-slate-600">
                             <h4 className="font-bold text-gray-700 dark:text-gray-200 text-xs">۲. جلسه آنلاین</h4>
-                            <input type="text" placeholder="تاریخ جلسه" value={formData.meeting_date || ''} onChange={(e) => setFormData({...formData, meeting_date: e.target.value})} className="border p-2 rounded-lg text-xs w-full dark:bg-slate-800 dark:border-slate-600 dark:text-white"/>
+                            <div className="w-full">
+                                 <DatePicker 
+                                    calendar={persian} 
+                                    locale={persian_fa} 
+                                    value={formData.meeting_date || ''} 
+                                    onChange={(date) => setFormData({...formData, meeting_date: date})}
+                                    placeholder="تاریخ جلسه"
+                                    inputClass="w-full border p-2 rounded-lg text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-white outline-none"
+                                 />
+                            </div>
                             <div className="relative">
                                 <textarea placeholder="توضیحات جلسه..." rows="2" value={formData.meeting_note || ''} onChange={(e) => setFormData({...formData, meeting_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-white"/>
                                 <div className="absolute left-1 bottom-1"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, meeting_note: (p.meeting_note || '') + ' ' + text}))} /></div>
@@ -1208,7 +1263,16 @@ export default function App() {
                         {/* Section 3: Followup */}
                         <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded-xl space-y-2 border dark:border-slate-600">
                             <h4 className="font-bold text-gray-700 dark:text-gray-200 text-xs">۳. پیگیری بعدی</h4>
-                            <input type="text" placeholder="تاریخ فالوآپ" value={formData.followup_date || ''} onChange={(e) => setFormData({...formData, followup_date: e.target.value})} className="border p-2 rounded-lg text-xs w-full dark:bg-slate-800 dark:border-slate-600 dark:text-white"/>
+                            <div className="w-full">
+                                 <DatePicker 
+                                    calendar={persian} 
+                                    locale={persian_fa} 
+                                    value={formData.followup_date || ''} 
+                                    onChange={(date) => setFormData({...formData, followup_date: date})}
+                                    placeholder="تاریخ پیگیری"
+                                    inputClass="w-full border p-2 rounded-lg text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-white outline-none"
+                                 />
+                            </div>
                             <div className="relative">
                                 <textarea placeholder="توضیحات پیگیری..." rows="2" value={formData.followup_note || ''} onChange={(e) => setFormData({...formData, followup_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-white"/>
                                 <div className="absolute left-1 bottom-1"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, followup_note: (p.followup_note || '') + ' ' + text}))} /></div>
