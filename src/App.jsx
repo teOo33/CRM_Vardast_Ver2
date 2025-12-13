@@ -81,6 +81,8 @@ import MeetingsTab from './components/MeetingsTab';
 import AIAnalysisTab from './components/AIAnalysisTab';
 import CohortChart from './components/CohortChart';
 import UserProfile from './components/UserProfile';
+import UsersTab from './components/UsersTab';
+import logo from './assets/logo.png';
 
 let supabase;
 try {
@@ -444,15 +446,27 @@ export default function App() {
 
   const handleStatusChange = async (id, newStatus, table) => {
     if (!supabase) return;
-    const payload = { 
-        status: newStatus,
-        last_updated_by: loggedInUser || 'Admin', // Use loggedInUser
-        last_updated_at: new Date().toISOString()
-    };
+    let payload = {};
+    if (table === 'onboardings') {
+        const progressMap = { '0_percent': 0, '100_percent': 100, 'in_progress': 50 };
+        payload = { 
+            progress: progressMap[newStatus] ?? 0,
+            last_updated_by: loggedInUser || 'Admin', 
+            last_updated_at: new Date().toISOString()
+        };
+    } else {
+        payload = { 
+            status: newStatus,
+            last_updated_by: loggedInUser || 'Admin',
+            last_updated_at: new Date().toISOString()
+        };
+    }
+
     const { error } = await supabase.from(table).update(payload).eq('id', id);
     if (!error) {
       if (table === 'issues') { setIssues(prev => prev.map(i => i.id.toString() === id ? { ...i, ...payload } : i)); } 
       else if (table === 'features') { setFeatures(prev => prev.map(f => f.id.toString() === id ? { ...f, ...payload } : f)); }
+      else if (table === 'onboardings') { setOnboardings(prev => prev.map(o => o.id.toString() === id ? { ...o, ...payload } : o)); }
     }
   };
 
@@ -496,20 +510,34 @@ export default function App() {
       
       <aside className={`${isSidebarOpen ? 'w-64' : 'w-0 md:w-20'} h-full bg-white/90 dark:bg-slate-900/90 dark:border-slate-800 backdrop-blur-xl border-l border-gray-200 flex flex-col transition-all duration-300 overflow-hidden fixed md:static inset-y-0 right-0 z-50`}>
         <div className="p-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800 flex-shrink-0">
-          {isSidebarOpen && <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-l from-blue-600 to-purple-600 text-xl">وردست</span>}
+          {isSidebarOpen && <img src={logo} alt="Vardast" className="h-10 w-auto" />}
           <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 dark:text-white rounded-xl border dark:border-slate-700 mr-auto">{isSidebarOpen ? <X size={18} /> : <Menu size={18} />}</button>
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {[{ id: 'dashboard', label: 'داشبورد', icon: LayoutDashboard }, { id: 'meetings', label: 'جلسات تیم', icon: Users }, { id: 'issues', label: 'مشکلات فنی', icon: AlertTriangle }, { id: 'frozen', label: 'اکانت فریز', icon: Snowflake }, { id: 'features', label: 'درخواست فیچر', icon: Lightbulb }, { id: 'refunds', label: 'بازگشت وجه', icon: CreditCard }, { id: 'onboarding', label: 'ورود کاربران', icon: GraduationCap }, { id: 'profile', label: 'پروفایل کاربر', icon: User }, { id: 'ai-analysis', label: 'تحلیل هوشمند', icon: BrainCircuit }].map((item) => (
+          {[
+              { id: 'dashboard', label: 'داشبورد', icon: LayoutDashboard }, 
+              { id: 'profile', label: 'پروفایل', icon: User },
+              { id: 'users', label: 'کاربران', icon: Users },
+              { id: 'issues', label: 'مشکلات فنی', icon: AlertTriangle }, 
+              { id: 'features', label: 'درخواست فیچر', icon: Lightbulb }, 
+              { id: 'frozen', label: 'فریز ها', icon: Snowflake }, 
+              { id: 'refunds', label: 'بازگشت وجه', icon: CreditCard }, 
+              { id: 'onboarding', label: 'آنبوردینگ', icon: GraduationCap }, 
+              { id: 'ai-analysis', label: 'تحلیل هوشمند', icon: BrainCircuit },
+              { id: 'meetings', label: 'جلسات تیم', icon: Users }
+            ].map((item) => (
             <button key={item.id} onClick={() => { setActiveTab(item.id); if(window.innerWidth < 768) setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm transition-all ${activeTab === item.id ? 'bg-blue-50 text-blue-700 font-bold border border-blue-100 dark:bg-slate-800 dark:border-slate-700 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800'}`}>
               <item.icon size={18} className="flex-shrink-0" />
               {isSidebarOpen && <span>{item.label}</span>}
             </button>
           ))}
         </nav>
-        <div className="p-4 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between">
-             <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition" title="تغییر تم">{darkMode ? <Sun size={18}/> : <Moon size={18}/>}</button>
-             <button onClick={handleLogout} className="p-2 rounded-xl hover:bg-red-50 text-red-500 dark:text-red-400 transition" title="خروج"><LogOut size={18}/></button>
+        <div className="p-4 border-t border-gray-100 dark:border-slate-800 flex flex-col gap-4">
+             <div className="flex items-center justify-between w-full">
+                <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition" title="تغییر تم">{darkMode ? <Sun size={18}/> : <Moon size={18}/>}</button>
+                <button onClick={handleLogout} className="p-2 rounded-xl hover:bg-red-50 text-red-500 dark:text-red-400 transition" title="خروج"><LogOut size={18}/></button>
+             </div>
+             {isSidebarOpen && <div className="text-[10px] text-center text-gray-400 font-bold">طراحی شده توسط میلاد :D<br/>قدرت گرفته از وردست</div>}
         </div>
       </aside>
 
@@ -589,7 +617,7 @@ export default function App() {
           </ChartModal>
           <ChartModal isOpen={expandedChart === 'cohort'} onClose={() => setExpandedChart(null)} title="نرخ فعال‌سازی کاربران"><CohortChart onboardings={filteredOnboardings} /></ChartModal>
           <HistoryLogModal isOpen={!!historyModalData} onClose={() => setHistoryModalData(null)} history={historyModalData} />
-          {activeTab === 'onboarding' && <OnboardingTab onboardings={filteredOnboardings} openModal={openModal} navigateToProfile={navigateToProfile} setHistoryModalData={setHistoryModalData} />}
+          {activeTab === 'onboarding' && <OnboardingTab onboardings={filteredOnboardings} openModal={openModal} navigateToProfile={navigateToProfile} setHistoryModalData={setHistoryModalData} onStatusChange={(id, status) => handleStatusChange(id, status, 'onboardings')} />}
           {activeTab === 'meetings' && <MeetingsTab meetings={filteredMeetings} openModal={openModal} navigateToProfile={navigateToProfile} />}
           {activeTab === 'issues' && (
             <section className="h-full flex flex-col">
@@ -613,6 +641,7 @@ export default function App() {
             </section>
           )}
           {activeTab === 'profile' && <UserProfile usersData={allUsers} issues={issues} frozen={frozen} features={features} refunds={refunds} onboardings={onboardings} meetings={meetings} openModal={openModal} profileSearch={profileSearch} setProfileSearch={setProfileSearch} />}
+          {activeTab === 'users' && <UsersTab users={allUsers} navigateToProfile={navigateToProfile} />}
           {activeTab === 'ai-analysis' && <AIAnalysisTab issues={filteredIssues} onboardings={filteredOnboardings} features={filteredFeatures} navigateToProfile={navigateToProfile} />}
           {['frozen', 'refunds'].includes(activeTab) && (
             <div className="bg-white rounded-2xl border overflow-hidden p-6">
