@@ -8,84 +8,26 @@ import persian from "react-date-object/calendars/persian";
 import persian_fa from "react-date-object/locales/persian_fa";
 
 import {
-  LayoutDashboard,
-  AlertTriangle,
-  Snowflake,
-  Lightbulb,
-  CreditCard,
-  Plus,
-  X,
-  Menu,
-  User,
-  Sparkles,
-  Loader2,
-  Download,
-  Phone,
-  Instagram,
-  Search,
-  Activity,
-  TrendingUp,
-  AlertCircle,
-  CheckCircle2,
-  Globe,
-  Send,
-  Edit,
-  History,
-  UserPlus,
-  BrainCircuit,
-  MessageSquare,
-  ArrowRight,
-  GraduationCap,
-  List,
-  Columns,
-  Clock,
-  UserCheck,
-  Calendar,
-  Filter,
-  Maximize2,
-  Bell,
-  Mic,
-  MicOff,
-  CheckSquare,
-  Wrench,
-  Users,
-  Moon,
-  Sun,
-  LogOut // آیکون خروج اضافه شد
+  LayoutDashboard, AlertTriangle, Snowflake, Lightbulb, CreditCard, Plus, X, Menu, User, Sparkles, Loader2, Download, Phone, Instagram, Search, Activity, TrendingUp, AlertCircle, CheckCircle2, Globe, Send, Edit, History, UserPlus, BrainCircuit, MessageSquare, ArrowRight, GraduationCap, List, Columns, Clock, UserCheck, Calendar, Filter, Maximize2, Bell, Mic, MicOff, CheckSquare, Wrench, Users, Moon, Sun, LogOut
 } from 'lucide-react';
 
 import {
-  XAxis,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-  AreaChart,
-  Area,
-  ScatterChart,
-  Scatter,
-  YAxis,
-  ZAxis,
-  CartesianGrid
+  XAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area, ScatterChart, Scatter, YAxis, ZAxis, CartesianGrid
 } from 'recharts';
 
+// --- Environment & Config ---
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
 
-// --- تنظیمات وردست (Vardast) ---
+// Whitelist Users
+const ALLOWED_USERS = ['milad', 'aliH', 'amirreza', 'mahta', 'sajad', 'yara', 'hamid', 'mojtaba', 'farhad'];
+
+// Vardast API
 const VARDAST_API_KEY = "DVmo0Hi2NHQE3kLx-Q7V3NWZBophr_kKDlTXrj7bdtQ";
 const VARDAST_CHANNEL_ID = "a5211d3f-f59a-4a0e-b604-dabef603810c"; 
 const VARDAST_BASE_URL = "https://apigw.vardast.chat/uaa/public";
 
-// لیست سفید کاربران
-const ALLOWED_USERS = ['milad', 'aliH', 'amirreza', 'mahta', 'sajad', 'yara', 'hamid', 'mojtaba', 'farhad'];
-
-// متغیرهای کش
-let cachedContactId = null;
-
+// Form Defaults
 const INITIAL_FORM_DATA = {
   username: '', phone_number: '', instagram_username: '', telegram_id: '', website: '', bio: '', 
   subscription_status: '', desc_text: '', module: '', type: '', status: '', support: '', resolved_at: '',
@@ -94,22 +36,24 @@ const INITIAL_FORM_DATA = {
   repeat_count: '', importance: '', internal_note: '', reason: '', duration: '',
   action: '', suggestion: '', can_return: '', sales_source: '', ops_note: '', flag: '', date: '',
   technical_review: false,
-  // Onboarding specific
+  created_by: '', history: [],
   has_website: false, progress: 0, initial_call_status: '', conversation_summary: '', call_date: '', meeting_date: '', meeting_note: '', followup_date: '', followup_note: '',
-  // Meetings specific
   meeting_time: '', result: '', held: false
 };
 
+// --- Hooks ---
 const useTailwind = () => {
   useEffect(() => {
     if (!document.getElementById('tailwind-cdn')) {
-      const config = document.createElement('script');
-      config.innerHTML = `tailwind.config = { darkMode: 'class' }`;
-      document.head.appendChild(config);
-
       const script = document.createElement('script');
       script.id = 'tailwind-cdn';
       script.src = 'https://cdn.tailwindcss.com';
+      script.onload = () => {
+        // Tailwind loaded
+        if (window.tailwind) {
+            window.tailwind.config = { darkMode: 'class' };
+        }
+      };
       document.head.appendChild(script);
       
       const style = document.createElement('style');
@@ -138,7 +82,7 @@ try {
   console.error('Supabase init error:', e);
 }
 
-// --- Helpers Safe Functions ---
+// --- Helpers ---
 const formatDate = (dateStr) => {
   if (!dateStr) return '-';
   try {
@@ -148,9 +92,7 @@ const formatDate = (dateStr) => {
       return isValid(d) ? d.toLocaleDateString('fa-IR') : dateStr;
     }
     return String(dateStr);
-  } catch (e) {
-    return String(dateStr);
-  }
+  } catch { return String(dateStr); }
 };
 
 const checkSLA = (item) => {
@@ -170,7 +112,6 @@ const parsePersianDate = (dateStr) => {
   if (!dateStr) return null;
   if (dateStr instanceof Date) return dateStr;
   if (typeof dateStr === 'string' && dateStr.includes('T')) return new Date(dateStr);
-  
   try {
     const normalized = String(dateStr).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
     const parts = normalized.split('/');
@@ -183,7 +124,7 @@ const parsePersianDate = (dateStr) => {
             return new Date(g.gy, g.gm - 1, g.gd);
         }
     }
-  } catch (e) { console.error("Date parse error", e); }
+  } catch (e) { console.error(e); }
   return null;
 };
 
@@ -197,11 +138,9 @@ const normalizeDate = (item) => {
 const filterDataByTime = (data, range, customRange) => {
     if (!data) return [];
     if (!range && !customRange) return data;
-    
     const now = new Date();
     let startDate = null;
     let endDate = now;
-
     if (customRange && customRange.length === 2) {
         startDate = customRange[0].toDate();
         endDate = customRange[1].toDate();
@@ -215,7 +154,6 @@ const filterDataByTime = (data, range, customRange) => {
             default: return data;
         }
     }
-
     return data.filter(item => {
         const date = normalizeDate(item);
         if (!date || !isValid(date)) return false;
@@ -223,7 +161,8 @@ const filterDataByTime = (data, range, customRange) => {
     });
 };
 
-// --- Vardast Logic (Direct) ---
+// --- Vardast Logic ---
+let cachedContactId = null;
 const getDashboardContactId = () => {
   let savedId = localStorage.getItem('vardast_dashboard_contact_id');
   if (!savedId) {
@@ -238,18 +177,12 @@ const getDashboardContactId = () => {
 
 const callVardastAI = async (prompt, isJson = false) => {
   if (!VARDAST_API_KEY) return alert('کلید API وردست وارد نشده است.');
-  
   try {
-    if (!cachedContactId) {
-      cachedContactId = getDashboardContactId();
-    }
+    if (!cachedContactId) cachedContactId = getDashboardContactId();
 
     const response = await fetch(`${VARDAST_BASE_URL}/messenger/api/chat/public/process`, {
       method: 'POST',
-      headers: { 
-        'X-API-Key': VARDAST_API_KEY, 
-        'Content-Type': 'application/json' 
-      },
+      headers: { 'X-API-Key': VARDAST_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: prompt,
         channel_id: VARDAST_CHANNEL_ID,
@@ -259,43 +192,24 @@ const callVardastAI = async (prompt, isJson = false) => {
     });
 
     if (response.status === 422) {
-       console.error("Vardast 422 Error.");
-       return "خطای ۴۲۲: داده نامعتبر.";
+       console.error("Vardast 422. Payload:", { channel: VARDAST_CHANNEL_ID, contact: cachedContactId });
+       return "خطای ۴۲۲: داده نامعتبر (کانال یا آیدی).";
     }
 
     const data = await response.json();
-
     if (data.status === 'success' && data.response) {
       let resultText = data.response;
-      if (isJson) {
-        resultText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
-      }
+      if (isJson) resultText = resultText.replace(/```json/g, '').replace(/```/g, '').trim();
       return resultText;
     } else {
-      console.error('Vardast Error:', data);
       return `خطا: ${data.error || 'Unknown error'}`;
     }
-
   } catch (error) {
-    console.error('Vardast Connection Error:', error);
     return "خطای ارتباط با سرور.";
   }
 };
 
-const downloadCSV = (data, fileName) => {
-  if (!data || !data.length) return alert('داده‌ای وجود ندارد.');
-  const headers = Object.keys(data[0]);
-  const csvContent = [
-    headers.join(','),
-    ...data.map((row) => headers.map((f) => `"${(row[f] || '').toString().replace(/"/g, '""')}"`).join(','))
-  ].join('\n');
-  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `${fileName}.csv`;
-  link.click();
-};
-
+// --- Components ---
 const UserAvatar = ({ name, size = 'md' }) => {
   const safeName = name || '?';
   const colors = ['from-blue-400 to-blue-600', 'from-purple-400 to-purple-600', 'from-pink-400 to-pink-600', 'from-emerald-400 to-emerald-600', 'from-orange-400 to-orange-600'];
@@ -308,32 +222,25 @@ const UserAvatar = ({ name, size = 'md' }) => {
   );
 };
 
-// ... Components: UserSearchInput, VoiceRecorder, FlagFilter, TimeFilter, HistoryLogModal, ChartModal, KanbanBoard ...
-const UserSearchInput = ({ value, onChange, onSelect, allUsers }) => {
+const UserSearchInput = ({ value, onChange, onSelect, allUsers = [] }) => {
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState(value || '');
   const wrapperRef = useRef(null);
 
   useEffect(() => { setTerm(value || ''); }, [value]);
-
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-        setOpen(false);
-      }
-    };
+    const handleClickOutside = (event) => { if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setOpen(false); };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const filtered = useMemo(() => {
-    if (!term) return [];
+    if (!term || !allUsers) return [];
     const lower = term.toLowerCase();
     return allUsers.filter(u => 
       (u.username && u.username.toLowerCase().includes(lower)) ||
       (u.phone_number && u.phone_number.includes(lower)) ||
-      (u.instagram_username && u.instagram_username.toLowerCase().includes(lower)) ||
-      (u.telegram_id && u.telegram_id.toLowerCase().includes(lower))
+      (u.instagram_username && u.instagram_username.toLowerCase().includes(lower))
     ).slice(0, 5); 
   }, [term, allUsers]);
 
@@ -344,31 +251,17 @@ const UserSearchInput = ({ value, onChange, onSelect, allUsers }) => {
           value={term}
           onChange={(e) => { setTerm(e.target.value); onChange(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
-          placeholder="جستجوی نام کاربری، اینستاگرام، شماره یا تلگرام..."
-          className="w-full border p-3 pl-10 rounded-xl outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 bg-slate-50/50 text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+          placeholder="جستجو..."
+          className="w-full border p-3 pl-10 rounded-xl outline-none focus:border-blue-500 bg-slate-50/50 text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white"
         />
         <Search size={16} className="absolute left-3 top-3.5 text-gray-400" />
       </div>
       {open && filtered.length > 0 && (
         <div className="absolute top-full right-0 left-0 bg-white shadow-xl rounded-xl mt-1 border z-50 overflow-hidden dark:bg-slate-800 dark:border-slate-600">
           {filtered.map((u) => (
-            <div 
-              key={u.username} 
-              className="p-3 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 last:border-0 text-sm flex items-center gap-3"
-              onClick={() => {
-                onChange(u.username);
-                if (onSelect) onSelect(u);
-                setOpen(false);
-              }}
-            >
+            <div key={u.username} className="p-3 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 last:border-0 text-sm flex items-center gap-3" onClick={() => { onChange(u.username); if (onSelect) onSelect(u); setOpen(false); }}>
               <UserAvatar name={u.username} size="sm" />
-              <div className="flex flex-col">
-                <span className="font-bold text-gray-700 dark:text-gray-200">{u.username}</span>
-                <div className="flex gap-2 text-[10px] text-gray-400">
-                  {u.instagram_username && <span>IG: {u.instagram_username}</span>}
-                  {u.phone_number && <span>PH: {u.phone_number}</span>}
-                </div>
-              </div>
+              <div className="flex flex-col"><span className="font-bold text-gray-700 dark:text-gray-200">{u.username}</span><span className="text-[10px] text-gray-400">{u.phone_number || u.instagram_username}</span></div>
             </div>
           ))}
         </div>
@@ -380,10 +273,7 @@ const UserSearchInput = ({ value, onChange, onSelect, allUsers }) => {
 const VoiceRecorder = ({ onTranscript }) => {
   const [isRecording, setIsRecording] = useState(false);
   const startRecording = () => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('مرورگر شما از قابلیت تبدیل صدا به متن پشتیبانی نمی‌کند.');
-      return;
-    }
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) { alert('مرورگر پشتیبانی نمی‌کند.'); return; }
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognition.lang = 'fa-IR';
@@ -391,22 +281,19 @@ const VoiceRecorder = ({ onTranscript }) => {
     recognition.maxAlternatives = 1;
     recognition.onstart = () => setIsRecording(true);
     recognition.onend = () => setIsRecording(false);
-    recognition.onerror = (event) => { console.error('Speech error', event.error); setIsRecording(false); };
+    recognition.onerror = () => setIsRecording(false);
     recognition.onresult = (event) => { onTranscript(event.results[0][0].transcript); };
     recognition.start();
   };
   return (
-    <button type="button" onClick={startRecording} className={`p-2 rounded-full transition ${isRecording ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`} title="تبدیل گفتار به متن">
+    <button type="button" onClick={startRecording} className={`p-2 rounded-full transition ${isRecording ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`} title="صوت به متن">
       {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
     </button>
   );
 };
 
 const FlagFilter = ({ selectedFlags, onChange }) => {
-  const toggleFlag = (flag) => {
-    if (selectedFlags.includes(flag)) onChange(selectedFlags.filter(f => f !== flag));
-    else onChange([...selectedFlags, flag]);
-  };
+  const toggleFlag = (flag) => { if (selectedFlags.includes(flag)) onChange(selectedFlags.filter(f => f !== flag)); else onChange([...selectedFlags, flag]); };
   return (
     <div className="flex gap-2 items-center text-xs">
       <span className="text-gray-400 font-medium">فیلتر:</span>
@@ -426,20 +313,7 @@ const TimeFilter = ({ value, onChange, customRange, onCustomChange }) => {
                 </button>
             ))}
             <div className="h-6 w-px bg-gray-200 mx-1"></div>
-            <DatePicker
-                value={customRange}
-                onChange={(date) => { onCustomChange(date); onChange('custom'); }}
-                range
-                calendar={persian}
-                locale={persian_fa}
-                calendarPosition="bottom-left"
-                render={(value, openCalendar) => (
-                    <button onClick={openCalendar} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${value ? 'bg-blue-100 text-blue-700' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700'}`}>
-                        <Calendar size={14}/>
-                        {value ? value.toString() : 'تاریخ دلخواه'}
-                    </button>
-                )}
-            />
+            <DatePicker value={customRange} onChange={(date) => { onCustomChange(date); onChange('custom'); }} range calendar={persian} locale={persian_fa} calendarPosition="bottom-left" render={(value, openCalendar) => (<button onClick={openCalendar} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${value ? 'bg-blue-100 text-blue-700' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700'}`}><Calendar size={14}/>{value ? value.toString() : 'تاریخ دلخواه'}</button>)} />
             {value && <button onClick={() => { onChange(null); onCustomChange(null); }} className="p-1.5 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-full transition"><X size={14}/></button>}
         </div>
     );
@@ -455,20 +329,7 @@ const HistoryLogModal = ({ isOpen, onClose, history }) => {
                     <button onClick={onClose}><X size={18} className="text-gray-400 hover:text-red-500"/></button>
                 </div>
                 <div className="overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                    {(!history || history.length === 0) ? (
-                        <p className="text-center text-gray-400 text-sm py-4">تغییری ثبت نشده است.</p>
-                    ) : (
-                        history.map((h, i) => (
-                            <div key={i} className="flex gap-3 text-sm border-b dark:border-slate-700 pb-3 last:border-0 last:pb-0">
-                                <UserAvatar name={h.user} size="sm"/>
-                                <div>
-                                    <div className="font-bold text-gray-700 dark:text-gray-200">{h.user}</div>
-                                    <div className="text-xs text-gray-400">{formatDate(h.date)} - {new Date(h.date).toLocaleTimeString('fa-IR')}</div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{h.action === 'edit' ? 'ویرایش اطلاعات' : 'ایجاد رکورد'}</div>
-                                </div>
-                            </div>
-                        ))
-                    )}
+                    {(!history || history.length === 0) ? (<p className="text-center text-gray-400 text-sm py-4">تغییری ثبت نشده است.</p>) : (history.map((h, i) => (<div key={i} className="flex gap-3 text-sm border-b dark:border-slate-700 pb-3 last:border-0 last:pb-0"><UserAvatar name={h.user} size="sm"/><div><div className="font-bold text-gray-700 dark:text-gray-200">{h.user}</div><div className="text-xs text-gray-400">{formatDate(h.date)} - {new Date(h.date).toLocaleTimeString('fa-IR')}</div><div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{h.action === 'edit' ? 'ویرایش اطلاعات' : 'ایجاد رکورد'}</div></div></div>)))}
                 </div>
              </div>
         </div>
@@ -495,9 +356,8 @@ const ChartModal = ({ isOpen, onClose, children, title }) => {
 const KanbanBoard = ({ items, onStatusChange, columns, navigateToProfile, openModal, type }) => {
   const onDragEnd = (result) => {
     if (!result.destination) return;
-    const { draggableId, destination } = result;
-    if (result.source.droppableId !== destination.droppableId) {
-      onStatusChange(draggableId, destination.droppableId);
+    if (result.source.droppableId !== result.destination.droppableId) {
+      onStatusChange(result.draggableId, result.destination.droppableId);
     }
   };
   const getItemsByStatus = (status) => items.filter(i => i.status === status);
@@ -544,17 +404,14 @@ const KanbanBoard = ({ items, onStatusChange, columns, navigateToProfile, openMo
   );
 };
 
-// ... MeetingsTab, OnboardingTab, AIAnalysisTab, AIChatBox, UserProfile ...
+// ... MeetingsTab, OnboardingTab, AIAnalysisTab ...
+
 const OnboardingTab = ({ onboardings, openModal, navigateToProfile }) => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center bg-white/80 backdrop-blur p-4 rounded-2xl shadow-sm border border-white">
         <h2 className="font-bold text-lg text-gray-800 flex items-center gap-2"><GraduationCap size={24} className="text-indigo-500"/> ورود کاربران جدید</h2>
-        <div className="flex gap-2">
-            <button onClick={() => openModal('onboarding')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm flex gap-2 items-center hover:bg-indigo-700 shadow-lg shadow-indigo-200 font-bold">
-            <Plus size={16} /> ثبت کاربر جدید
-            </button>
-        </div>
+        <button onClick={() => openModal('onboarding')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm flex gap-2 items-center hover:bg-indigo-700 shadow-lg shadow-indigo-200 font-bold"><Plus size={16} /> ثبت کاربر جدید</button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {onboardings.map((item) => (
@@ -583,10 +440,7 @@ const MeetingsTab = ({ meetings, openModal, navigateToProfile }) => {
                 <button onClick={() => openModal('meeting')} className="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm flex gap-2 items-center hover:bg-teal-700 shadow-lg shadow-teal-200 font-bold"><Plus size={16} /> ثبت جلسه جدید</button>
             </div>
             <div className="bg-white dark:bg-slate-800 dark:border-slate-700 rounded-2xl border overflow-hidden">
-                <table className="w-full text-sm text-right">
-                    <thead className="bg-slate-50 dark:bg-slate-700 text-gray-500 dark:text-gray-300 border-b dark:border-slate-600"><tr><th className="p-4">زمان</th><th className="p-4">مشتری</th><th className="p-4">علت جلسه</th><th className="p-4">نتیجه</th><th className="p-4">برگزار شد؟</th><th className="p-4">ثبت کننده</th><th className="p-4"></th></tr></thead>
-                    <tbody className="divide-y dark:divide-slate-700">{filtered.map((m) => (<tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-700"><td className="p-4 font-mono text-xs text-gray-600 dark:text-gray-400">{formatDate(m.date)} - {m.meeting_time}</td><td className="p-4 font-bold cursor-pointer hover:text-blue-600 dark:text-white" onClick={() => navigateToProfile(m.username)}>{m.username}</td><td className="p-4 text-gray-600 dark:text-gray-400 max-w-xs truncate">{m.reason}</td><td className="p-4 text-gray-600 dark:text-gray-400 max-w-xs truncate">{m.result || '-'}</td><td className="p-4">{m.held ? <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-xs font-bold">بله</span> : <span className="bg-gray-100 text-gray-500 px-2 py-0.5 rounded text-xs">خیر</span>}</td><td className="p-4 text-xs text-gray-500 dark:text-gray-400">{m.created_by}</td><td className="p-4"><button onClick={() => openModal('meeting', m)} className="text-gray-400 hover:text-teal-600"><Edit size={16}/></button></td></tr>))}</tbody>
-                </table>
+                <table className="w-full text-sm text-right"><thead className="bg-slate-50 dark:bg-slate-700 text-gray-500 dark:text-gray-300 border-b dark:border-slate-600"><tr><th className="p-4">زمان</th><th className="p-4">مشتری</th><th className="p-4">علت جلسه</th><th className="p-4">نتیجه</th><th className="p-4">برگزار شد؟</th><th className="p-4">ثبت کننده</th><th className="p-4"></th></tr></thead><tbody className="divide-y dark:divide-slate-700">{filtered.map((m) => (<tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-700"><td className="p-4 font-mono text-xs text-gray-600 dark:text-gray-400">{formatDate(m.date)} - {m.meeting_time}</td><td className="p-4 font-bold cursor-pointer hover:text-blue-600 dark:text-white" onClick={() => navigateToProfile(m.username)}>{m.username}</td><td className="p-4 text-gray-600 dark:text-gray-400 max-w-xs truncate">{m.reason}</td><td className="p-4 text-gray-600 dark:text-gray-400 max-w-xs truncate">{m.result || '-'}</td><td className="p-4">{m.held ? <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-xs font-bold">بله</span> : <span className="bg-gray-100 text-gray-500 px-2 py-0.5 rounded text-xs">خیر</span>}</td><td className="p-4 text-xs text-gray-500 dark:text-gray-400">{m.created_by}</td><td className="p-4"><button onClick={() => openModal('meeting', m)} className="text-gray-400 hover:text-teal-600"><Edit size={16}/></button></td></tr>))}</tbody></table>
             </div>
         </div>
     );
@@ -615,9 +469,7 @@ const AIAnalysisTab = ({ issues, onboardings, features }) => {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-6xl mx-auto">
             <div className="space-y-6">
-                <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-8 rounded-3xl text-white shadow-lg relative overflow-hidden">
-                    <div className="relative z-10"><h2 className="text-2xl font-black mb-2 flex items-center gap-2"><Sparkles className="text-amber-300"/> تحلیل خودکار</h2><div className="flex gap-3 flex-wrap"><button onClick={() => handleAnalysis('general')} disabled={loading} className="bg-white text-indigo-700 px-4 py-2 rounded-xl font-bold hover:bg-indigo-50 transition shadow-lg flex items-center gap-2 text-sm">{loading ? <Loader2 size={16} className="animate-spin"/> : <Activity size={16}/>}مشکلات فنی</button><button onClick={() => handleAnalysis('onboarding')} disabled={loading} className="bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold hover:bg-indigo-600 transition shadow-lg flex items-center gap-2 border border-indigo-400 text-sm">{loading ? <Loader2 size={16} className="animate-spin"/> : <GraduationCap size={16}/>}آنبوردینگ</button><button onClick={() => handleAnalysis('features')} disabled={loading} className="bg-amber-400 text-indigo-900 px-4 py-2 rounded-xl font-bold hover:bg-amber-300 transition shadow-lg flex items-center gap-2 text-sm">{loading ? <Loader2 size={16} className="animate-spin"/> : <Lightbulb size={16}/>}فیچرها</button></div></div>
-                </div>
+                <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-8 rounded-3xl text-white shadow-lg relative overflow-hidden"><div className="relative z-10"><h2 className="text-2xl font-black mb-2 flex items-center gap-2"><Sparkles className="text-amber-300"/> تحلیل خودکار</h2><div className="flex gap-3 flex-wrap"><button onClick={() => handleAnalysis('general')} disabled={loading} className="bg-white text-indigo-700 px-4 py-2 rounded-xl font-bold hover:bg-indigo-50 transition shadow-lg flex items-center gap-2 text-sm">{loading ? <Loader2 size={16} className="animate-spin"/> : <Activity size={16}/>}مشکلات فنی</button><button onClick={() => handleAnalysis('onboarding')} disabled={loading} className="bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold hover:bg-indigo-600 transition shadow-lg flex items-center gap-2 border border-indigo-400 text-sm">{loading ? <Loader2 size={16} className="animate-spin"/> : <GraduationCap size={16}/>}آنبوردینگ</button><button onClick={() => handleAnalysis('features')} disabled={loading} className="bg-amber-400 text-indigo-900 px-4 py-2 rounded-xl font-bold hover:bg-amber-300 transition shadow-lg flex items-center gap-2 text-sm">{loading ? <Loader2 size={16} className="animate-spin"/> : <Lightbulb size={16}/>}فیچرها</button></div></div></div>
                 {analysisResult && <div className="bg-white p-6 rounded-3xl shadow-sm border prose prose-sm max-w-none">{analysisResult}</div>}
             </div>
             <AIChatBox contextData={{ issues: issues.length, onboardings: onboardings.length, features: features?.length, sample_issues: issues.slice(0, 10) }} />
@@ -627,7 +479,7 @@ const AIAnalysisTab = ({ issues, onboardings, features }) => {
 
 const CohortChart = ({ onboardings }) => {
   const data = useMemo(() => { const cohorts = {}; onboardings.forEach(u => { if (!u.created_at || !u.created_at.includes('T')) return; const date = new Date(u.created_at); const month = date.toLocaleDateString('fa-IR', { month: 'long' }); if (!cohorts[month]) cohorts[month] = { month, total: 0, active: 0 }; cohorts[month].total++; if (u.progress > 0) cohorts[month].active++; }); return Object.values(cohorts).map(c => ({ ...c, retention: Math.round((c.active / c.total) * 100) })); }, [onboardings]);
-  return (<ResponsiveContainer width="100%" height="100%"><AreaChart data={data}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" /><YAxis unit="%" /><Tooltip /><Area type="monotone" dataKey="retention" stroke="#82ca9d" fill="#82ca9d" name="نرخ فعال‌سازی" /></AreaChart></ResponsiveContainer>);
+  return (<div className="w-full h-64 pointer-events-none"><ResponsiveContainer width="100%" height="100%"><AreaChart data={data}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" /><YAxis unit="%" /><Tooltip /><Area type="monotone" dataKey="retention" stroke="#82ca9d" fill="#82ca9d" name="نرخ فعال‌سازی" /></AreaChart></ResponsiveContainer></div>);
 };
 
 const UserProfile = ({ allUsers, issues, frozen, features, refunds, onboardings, meetings, openModal, profileSearch, setProfileSearch }) => {
@@ -640,7 +492,7 @@ const UserProfile = ({ allUsers, issues, frozen, features, refunds, onboardings,
     const userRecords = useMemo(() => { if (!search) return []; return [...issues.map(x => ({ ...x, src: 'issue', date: x.created_at })), ...frozen.map(x => ({ ...x, src: 'frozen', date: x.frozen_at })), ...features.map(x => ({ ...x, src: 'feature', date: x.created_at })), ...refunds.map(x => ({ ...x, src: 'refund', date: x.requested_at })), ...onboardings.map(x => ({ ...x, src: 'onboarding', date: x.created_at })), ...meetings.map(x => ({ ...x, src: 'meeting', date: x.date }))].filter(r => r.username === search).sort((a, b) => (b.date || '').localeCompare(a.date || '')); }, [search, issues, frozen, features, refunds, onboardings, meetings]);
     return (
         <div className="w-full max-w-5xl mx-auto space-y-6">
-           <div className="bg-white/80 dark:bg-slate-800/80 dark:border-slate-700 backdrop-blur-md p-6 rounded-3xl shadow-sm border border-white relative z-20"><div className="flex justify-between items-center mb-3"><h2 className="font-bold text-gray-800 dark:text-white flex items-center gap-2"><User size={20} className="text-blue-600"/> پروفایل کاربر</h2><button onClick={() => openModal('profile')} className="bg-blue-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-lg shadow-blue-200 flex items-center gap-1 hover:bg-blue-700 transition"><Plus size={14}/> پروفایل جدید</button></div><div className="relative"><div className="flex items-center border border-gray-200 dark:border-slate-600 rounded-2xl bg-gray-50/50 dark:bg-slate-700/50 overflow-hidden focus-within:ring-2 ring-blue-100 transition-all"><div className="pl-3 pr-4 text-gray-400"><Search size={18} /></div><input placeholder="جستجو..." value={search} className="w-full p-3 bg-transparent outline-none text-sm dark:text-white" onChange={(e) => handleSearch(e.target.value)} /></div>{suggestions.length > 0 && search !== suggestions[0]?.username && (<div className="absolute top-full right-0 left-0 bg-white shadow-xl rounded-2xl mt-2 max-h-60 overflow-auto border z-50 p-1">{suggestions.map((u) => (<div key={u.username} onClick={() => handleSearch(u.username)} className="p-3 hover:bg-blue-50 cursor-pointer rounded-xl text-sm flex gap-3 items-center transition-colors"><UserAvatar name={u.username} size="sm" /><div className="flex flex-col"><span className="font-semibold text-gray-700">{u.username}</span></div></div>))}</div>)}</div></div>
+           <div className="bg-white/80 dark:bg-slate-800/80 dark:border-slate-700 backdrop-blur-md p-6 rounded-3xl shadow-sm border border-white relative z-20"><div className="flex justify-between items-center mb-3"><h2 className="font-bold text-gray-800 dark:text-white flex items-center gap-2"><User size={20} className="text-blue-600"/> پروفایل کاربر</h2><button onClick={() => openModal('profile')} className="bg-blue-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-lg shadow-blue-200 flex items-center gap-1 hover:bg-blue-700 transition"><Plus size={14}/> پروفایل جدید</button></div><div className="relative"><div className="flex items-center border border-gray-200 dark:border-slate-600 rounded-2xl bg-gray-50/50 dark:bg-slate-700/50 overflow-hidden focus-within:ring-2 ring-blue-100 transition-all"><div className="pl-3 pr-4 text-gray-400"><Search size={18} /></div><input placeholder="جستجو..." value={search} className="w-full p-3 bg-transparent outline-none text-sm dark:text-white" onChange={(e) => handleSearch(e.target.value)} /></div>{suggestions.length > 0 && search !== suggestions[0]?.username && (<div className="absolute top-full right-0 left-0 bg-white shadow-xl rounded-2xl mt-2 max-h-60 overflow-auto border z-50 p-1 dark:bg-slate-800 dark:border-slate-600">{suggestions.map((u) => (<div key={u.username} onClick={() => handleSearch(u.username)} className="p-3 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer rounded-xl text-sm flex gap-3 items-center transition-colors"><UserAvatar name={u.username} size="sm" /><div className="flex flex-col"><span className="font-semibold text-gray-700 dark:text-gray-200">{u.username}</span></div></div>))}</div>)}</div></div>
            {selectedUserStats ? (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <div className="bg-gradient-to-l from-blue-50 to-white dark:from-slate-800 dark:to-slate-900 p-6 rounded-3xl shadow-sm border border-blue-100 dark:border-slate-700 flex flex-col md:flex-row items-center md:items-start gap-6 relative overflow-hidden"><UserAvatar name={selectedUserStats.username} size="lg" /><div className="flex-1 text-center md:text-right z-10 w-full"><div className="flex flex-col md:flex-row justify-between items-center mb-4"><div><h2 className="text-2xl font-black text-gray-800 dark:text-white mb-1">{selectedUserStats.username}</h2></div><button onClick={() => openModal('profile', selectedUserStats)} className="text-blue-600 bg-blue-100 hover:bg-blue-200 px-4 py-2 rounded-xl text-xs font-bold transition mt-3 md:mt-0 flex gap-2 items-center"><Edit size={14}/> ویرایش پروفایل</button></div><div className="mt-4 flex gap-2 justify-center md:justify-start"><button onClick={() => openModal('meeting', { username: selectedUserStats.username })} className="bg-teal-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-teal-200 flex items-center gap-2 hover:bg-teal-600 transition"><Clock size={16}/> ست کردن جلسه</button></div></div></div>
@@ -656,9 +508,6 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
-  const [isConnected, setIsConnected] = useState(false);
-  
-  // Data States
   const [issues, setIssues] = useState([]);
   const [frozen, setFrozen] = useState([]);
   const [features, setFeatures] = useState([]);
@@ -666,161 +515,43 @@ export default function App() {
   const [profiles, setProfiles] = useState([]);
   const [onboardings, setOnboardings] = useState([]);
   const [meetings, setMeetings] = useState([]);
-  
-  // Filter States
   const [globalTimeFilter, setGlobalTimeFilter] = useState(null); 
   const [globalCustomRange, setGlobalCustomRange] = useState(null);
   const [tabTimeFilter, setTabTimeFilter] = useState(null);
   const [tabCustomRange, setTabCustomRange] = useState(null);
   const [flagFilter, setFlagFilter] = useState([]); 
-
-  const [dismissedFollowUps, setDismissedFollowUps] = useState(() => {
-    if (typeof window === 'undefined') return [];
-    const saved = localStorage.getItem('dismissedFollowUps');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  // Modal & Form States
+  const [dismissedFollowUps, setDismissedFollowUps] = useState(() => { if (typeof window === 'undefined') return []; const saved = localStorage.getItem('dismissedFollowUps'); return saved ? JSON.parse(saved) : []; });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState(null);
   const [formData, setFormData] = useState(INITIAL_FORM_DATA);
   const [editingId, setEditingId] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
-  
-  // View Modes
   const [issueViewMode, setIssueViewMode] = useState('table'); 
   const [featureViewMode, setFeatureViewMode] = useState('table');
   const [expandedChart, setExpandedChart] = useState(null); 
   const [historyModalData, setHistoryModalData] = useState(null);
-
-  // Authentication State
-  const [loggedInUser, setLoggedInUser] = useState(() => localStorage.getItem('vardast_ops_user') || '');
-  const [isAuthed, setIsAuthed] = useState(() => {
-      if (typeof window === 'undefined') return false;
-      const authed = localStorage.getItem('vardast_ops_authed') === '1';
-      const user = localStorage.getItem('vardast_ops_user');
-      // Only authorize if BOTH flag is set AND user exists
-      return authed && !!user;
+  const [isAuthed, setIsAuthed] = useState(() => { 
+      if (typeof window === 'undefined') return false; 
+      return localStorage.getItem('vardast_ops_authed') === '1' && !!localStorage.getItem('vardast_ops_user'); 
   });
-
   const [loginStep, setLoginStep] = useState('username');
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
-  
+  const [loggedInUser, setLoggedInUser] = useState(localStorage.getItem('vardast_ops_user') || '');
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('vardast_ops_theme') === 'dark');
   const [profileSearch, setProfileSearch] = useState('');
 
-  useEffect(() => {
-    if (darkMode) document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-    localStorage.setItem('vardast_ops_theme', darkMode ? 'dark' : 'light');
-  }, [darkMode]);
+  useEffect(() => { if (darkMode) document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark'); localStorage.setItem('vardast_ops_theme', darkMode ? 'dark' : 'light'); }, [darkMode]);
+  useEffect(() => { const handleResize = () => setSidebarOpen(window.innerWidth >= 768); window.addEventListener('resize', handleResize); return () => window.removeEventListener('resize', handleResize); }, []);
 
-  useEffect(() => {
-    const handleResize = () => setSidebarOpen(window.innerWidth >= 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const handleUsernameSubmit = async (e) => {
-    e.preventDefault();
-    setLoginError('');
-    const user = loginUsername.trim();
-    
-    if (!ALLOWED_USERS.includes(user)) {
-      setLoginError('شما اجازه ورود ندارید.');
-      return;
-    }
-
-    if (!supabase) {
-        if (user) setLoginStep('password'); 
-        return;
-    }
-
-    try {
-        const { data, error } = await supabase.from('users').select('*').eq('username', user).single();
-        if (error && error.code !== 'PGRST116') {
-            console.error(error);
-            setLoginError('خطای ارتباط با سرور');
-            return;
-        }
-
-        if (data) {
-            if (data.password) {
-                setLoginStep('password');
-            } else {
-                setLoginStep('set-password');
-            }
-        } else {
-            setLoginStep('set-password');
-        }
-    } catch (e) {
-        console.error(e);
-        setLoginError('خطای ناشناخته');
-    }
-  };
-
-  const handlePasswordSubmit = async (e) => {
-    e.preventDefault();
-    setLoginError('');
-    
-    if (!supabase) {
-        finishLogin(loginUsername);
-        return;
-    }
-
-    if (loginStep === 'set-password') {
-        const { error } = await supabase.from('users').upsert({ 
-            username: loginUsername, 
-            password: loginPassword,
-            created_at: new Date().toISOString()
-        }, { onConflict: 'username' });
-        
-        if (error) {
-            setLoginError('خطا در ثبت کلمه عبور: ' + error.message);
-        } else {
-            finishLogin(loginUsername);
-        }
-    } else {
-        const { data, error } = await supabase.from('users').select('password').eq('username', loginUsername).single();
-        if (error || !data) {
-             setLoginError('کاربر یافت نشد.');
-        } else if (data.password === loginPassword) {
-             finishLogin(loginUsername);
-        } else {
-             setLoginError('کلمه عبور اشتباه است.');
-        }
-    }
-  };
-
-  const finishLogin = (user) => {
-      setIsAuthed(true);
-      setLoggedInUser(user);
-      localStorage.setItem('vardast_ops_authed', '1');
-      localStorage.setItem('vardast_ops_user', user);
-      setLoginError('');
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('vardast_ops_authed');
-    localStorage.removeItem('vardast_ops_user');
-    setIsAuthed(false);
-    setLoggedInUser('');
-    setLoginStep('username');
-    setLoginUsername('');
-    setLoginPassword('');
-  };
-
-  const navigateToProfile = (username) => {
-    setProfileSearch(username);
-    setActiveTab('profile');
-    if (window.innerWidth < 768) setSidebarOpen(false);
-  };
+  const handleUsernameSubmit = async (e) => { e.preventDefault(); setLoginError(''); const user = loginUsername.trim(); if (!ALLOWED_USERS.includes(user)) { setLoginError('شما اجازه ورود ندارید.'); return; } if (!supabase) { if (user) setLoginStep('password'); return; } try { const { data, error } = await supabase.from('users').select('*').eq('username', user).single(); if (error && error.code !== 'PGRST116') { console.error(error); setLoginError('خطای ارتباط با سرور'); return; } if (data) { if (data.password) { setLoginStep('password'); } else { setLoginStep('set-password'); } } else { setLoginStep('set-password'); } } catch (e) { console.error(e); setLoginError('خطای ناشناخته'); } };
+  const handlePasswordSubmit = async (e) => { e.preventDefault(); setLoginError(''); if (!supabase) { finishLogin(loginUsername); return; } if (loginStep === 'set-password') { const { error } = await supabase.from('users').upsert({ username: loginUsername, password: loginPassword, created_at: new Date().toISOString() }, { onConflict: 'username' }); if (error) { setLoginError('خطا در ثبت کلمه عبور: ' + error.message); } else { finishLogin(loginUsername); } } else { const { data, error } = await supabase.from('users').select('password').eq('username', loginUsername).single(); if (error || !data) { setLoginError('کاربر یافت نشد.'); } else if (data.password === loginPassword) { finishLogin(loginUsername); } else { setLoginError('کلمه عبور اشتباه است.'); } } };
+  const finishLogin = (user) => { setIsAuthed(true); setLoggedInUser(user); localStorage.setItem('vardast_ops_authed', '1'); localStorage.setItem('vardast_ops_user', user); setLoginError(''); };
+  const handleLogout = () => { localStorage.removeItem('vardast_ops_authed'); localStorage.removeItem('vardast_ops_user'); setIsAuthed(false); setLoggedInUser(''); setLoginStep('username'); setLoginUsername(''); setLoginPassword(''); };
 
   useEffect(() => {
     if (!supabase) return;
-    setIsConnected(true);
     const fetchAll = async () => {
       const { data: d1 } = await supabase.from('issues').select('*').order('id', { ascending: false }); if (d1) setIssues(d1);
       const { data: d2 } = await supabase.from('frozen').select('*').order('id', { ascending: false }); if (d2) setFrozen(d2);
@@ -859,63 +590,17 @@ export default function App() {
   const handleAiChurnAnalysis = async (user) => { setAiLoading(true); const prompt = `User: ${user.username}, Count: ${user.count}, Issues: ${JSON.stringify(user.issues)}`; const res = await callVardastAI(prompt); setAiLoading(false); if (res) alert(res); };
   const chartData = useMemo(() => { const acc = {}; filteredIssues.forEach((i) => { const date = normalizeDate(i); const d = date ? format(date, 'yyyy-MM-dd') : 'نامشخص'; acc[d] = (acc[d] || 0) + 1; }); return Object.keys(acc).map((d) => ({ date: d, count: acc[d] })).sort((a,b) => a.date.localeCompare(b.date)); }, [filteredIssues]);
 
-  const handleSave = async (e) => {
-    e.preventDefault();
-    const isEdit = !!editingId;
-    let finalDate = new Date();
-    if (formData.date) {
-        if (typeof formData.date === 'string') finalDate = parsePersianDate(formData.date) || new Date(formData.date);
-        else if (formData.date?.toDate) finalDate = formData.date.toDate();
-        else finalDate = formData.date;
-    }
-    const createdTimestamp = finalDate.toISOString();
-    
-    let table = '';
-    const commonFields = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, flag: formData.flag || null };
-    let payload = {};
+  const handleSave = async (e) => { e.preventDefault(); const isEdit = !!editingId; let finalDate = new Date(); if (formData.date) { if (typeof formData.date === 'string') finalDate = parsePersianDate(formData.date) || new Date(formData.date); else if (formData.date?.toDate) finalDate = formData.date.toDate(); else finalDate = formData.date; } const createdTimestamp = finalDate.toISOString(); let table = '', payload = {}; const commonFields = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, flag: formData.flag || null }; 
+    if (modalType === 'issue') { table = 'issues'; payload = { ...commonFields, desc_text: formData.desc_text, module: formData.module, type: formData.type, status: formData.status || 'باز', support: formData.support, subscription_status: formData.subscription_status, resolved_at: formData.resolved_at, technical_note: formData.technical_note, technical_review: formData.technical_review }; if (!isEdit) payload.created_at = createdTimestamp; }
+    else if (modalType === 'frozen') { table = 'frozen'; payload = { ...commonFields, desc_text: formData.desc_text, module: formData.module, cause: formData.cause, status: formData.status || 'فریز', subscription_status: formData.subscription_status, first_frozen_at: formData.first_frozen_at, freeze_count: formData.freeze_count ? Number(formData.freeze_count) : null, last_frozen_at: formData.last_frozen_at, resolve_status: formData.resolve_status, note: formData.note }; if (!isEdit) payload.frozen_at = createdTimestamp; }
+    else if (modalType === 'feature') { table = 'features'; payload = { ...commonFields, desc_text: formData.desc_text, title: formData.title, category: formData.category, status: formData.status || 'بررسی نشده', repeat_count: formData.repeat_count ? Number(formData.repeat_count) : null, importance: formData.importance ? Number(formData.importance) : null, internal_note: formData.internal_note }; if (!isEdit) payload.created_at = createdTimestamp; }
+    else if (modalType === 'refund') { table = 'refunds'; payload = { ...commonFields, reason: formData.reason, duration: formData.duration, category: formData.category, action: formData.action || 'در حال بررسی', suggestion: formData.suggestion, can_return: formData.can_return, sales_source: formData.sales_source, ops_note: formData.ops_note }; if (!isEdit) payload.requested_at = createdTimestamp; }
+    else if (modalType === 'profile') { table = 'profiles'; payload = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, telegram_id: formData.telegram_id, website: formData.website, bio: formData.bio }; if (!isEdit) payload.created_at = createdTimestamp; }
+    else if (modalType === 'meeting') { table = 'meetings'; payload = { username: formData.username, date: formData.date ? (formData.date.toDate ? formData.date.toDate().toISOString() : new Date(formData.date).toISOString()) : new Date().toISOString(), meeting_time: formData.meeting_time, reason: formData.reason, result: formData.result, held: formData.held === true || formData.held === 'true' }; if (!isEdit) payload.created_at = createdTimestamp; }
+    else if (modalType === 'onboarding') { table = 'onboardings'; payload = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, telegram_id: formData.telegram_id, has_website: formData.has_website === 'true' || formData.has_website === true, progress: Number(formData.progress), initial_call_status: formData.initial_call_status, conversation_summary: formData.conversation_summary, call_date: formData.call_date, meeting_date: formData.meeting_date, meeting_note: formData.meeting_note, followup_date: formData.followup_date, followup_note: formData.followup_note }; if (!isEdit) payload.created_at = createdTimestamp; if (!isEdit && payload.meeting_date) { const meetingPayload = { username: payload.username, date: payload.meeting_date, meeting_time: '10:00', reason: 'جلسه آنبوردینگ (خودکار)', created_by: loggedInUser, held: false, history: [] }; supabase.from('meetings').insert([meetingPayload]).then(({ error }) => { if (error) console.error('Error auto-creating meeting:', error); }); } }
 
-    // Determine Table and Payload
-    if (modalType === 'issue') {
-      table = 'issues';
-      payload = { ...commonFields, desc_text: formData.desc_text, module: formData.module, type: formData.type, status: formData.status || 'باز', support: formData.support, subscription_status: formData.subscription_status, resolved_at: formData.resolved_at, technical_note: formData.technical_note, technical_review: formData.technical_review };
-      if (!isEdit) payload.created_at = createdTimestamp;
-    } else if (modalType === 'frozen') {
-      table = 'frozen';
-      payload = { ...commonFields, desc_text: formData.desc_text, module: formData.module, cause: formData.cause, status: formData.status || 'فریز', subscription_status: formData.subscription_status, first_frozen_at: formData.first_frozen_at, freeze_count: formData.freeze_count ? Number(formData.freeze_count) : null, last_frozen_at: formData.last_frozen_at, resolve_status: formData.resolve_status, note: formData.note };
-      if (!isEdit) payload.frozen_at = createdTimestamp;
-    } else if (modalType === 'feature') {
-      table = 'features';
-      payload = { ...commonFields, desc_text: formData.desc_text, title: formData.title, category: formData.category, status: formData.status || 'بررسی نشده', repeat_count: formData.repeat_count ? Number(formData.repeat_count) : null, importance: formData.importance ? Number(formData.importance) : null, internal_note: formData.internal_note };
-      if (!isEdit) payload.created_at = createdTimestamp;
-    } else if (modalType === 'refund') {
-      table = 'refunds';
-      payload = { ...commonFields, reason: formData.reason, duration: formData.duration, category: formData.category, action: formData.action || 'در حال بررسی', suggestion: formData.suggestion, can_return: formData.can_return, sales_source: formData.sales_source, ops_note: formData.ops_note };
-      if (!isEdit) payload.requested_at = createdTimestamp;
-    } else if (modalType === 'profile') {
-      table = 'profiles';
-      payload = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, telegram_id: formData.telegram_id, website: formData.website, bio: formData.bio };
-      if (!isEdit) payload.created_at = createdTimestamp;
-    } else if (modalType === 'meeting') {
-        table = 'meetings';
-        payload = { username: formData.username, date: formData.date ? (formData.date.toDate ? formData.date.toDate().toISOString() : new Date(formData.date).toISOString()) : new Date().toISOString(), meeting_time: formData.meeting_time, reason: formData.reason, result: formData.result, held: formData.held === true || formData.held === 'true' };
-        if (!isEdit) payload.created_at = createdTimestamp;
-    } else if (modalType === 'onboarding') {
-      table = 'onboardings';
-      payload = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, telegram_id: formData.telegram_id, has_website: formData.has_website === 'true' || formData.has_website === true, progress: Number(formData.progress), initial_call_status: formData.initial_call_status, conversation_summary: formData.conversation_summary, call_date: formData.call_date, meeting_date: formData.meeting_date, meeting_note: formData.meeting_note, followup_date: formData.followup_date, followup_note: formData.followup_note };
-      if (!isEdit) payload.created_at = createdTimestamp;
-      if (!isEdit && payload.meeting_date) { 
-          const meetingPayload = { username: payload.username, date: payload.meeting_date, meeting_time: '10:00', reason: 'جلسه آنبوردینگ (خودکار)', created_by: loggedInUser, held: false, history: [] }; 
-          supabase.from('meetings').insert([meetingPayload]).then(({ error }) => { if (error) console.error('Error auto-creating meeting:', error); }); 
-      }
-    }
-
-    if (!supabase) {
-        setIsModalOpen(false); setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); return;
-    }
-    
-    // Audit Logic - Ensure loggedInUser is used
+    if (!supabase) { setIsModalOpen(false); setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); return; }
     const currentUser = loggedInUser || 'Unknown';
-    
     if (isEdit) {
         let currentRecord = null;
         if (table === 'issues') currentRecord = issues.find(r => r.id === editingId);
@@ -925,79 +610,29 @@ export default function App() {
         else if (table === 'profiles') currentRecord = profiles.find(r => r.id === editingId);
         else if (table === 'onboardings') currentRecord = onboardings.find(r => r.id === editingId);
         else if (table === 'meetings') currentRecord = meetings.find(r => r.id === editingId);
-
         const prevHistory = currentRecord?.history || [];
         const newEntry = { user: currentUser, date: new Date().toISOString(), action: 'edit' };
         payload.history = [newEntry, ...prevHistory];
         payload.last_updated_by = currentUser;
         payload.last_updated_at = new Date().toISOString();
-    } else {
-        payload.created_by = currentUser;
-        payload.history = [];
-    }
+    } else { payload.created_by = currentUser; payload.history = []; }
 
     let error = null;
-    if (isEdit) {
-      const res = await supabase.from(table).update(payload).eq('id', editingId);
-      error = res.error;
-      if (!error) {
-        const updater = (prev) => prev.map((r) => (r.id === editingId ? { ...r, ...payload } : r));
-        if (table === 'issues') setIssues(updater); if (table === 'frozen') setFrozen(updater); if (table === 'features') setFeatures(updater); if (table === 'refunds') setRefunds(updater); if (table === 'profiles') setProfiles(updater); if (table === 'onboardings') setOnboardings(updater); if (table === 'meetings') setMeetings(updater);
-      }
-    } else {
-      const res = await supabase.from(table).insert([payload]);
-      error = res.error;
-    }
-    if (error) alert('خطا: ' + error.message);
-    else { setIsModalOpen(false); setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); }
+    if (isEdit) { const res = await supabase.from(table).update(payload).eq('id', editingId); error = res.error; if (!error) { const updater = (prev) => prev.map((r) => (r.id === editingId ? { ...r, ...payload } : r)); if (table === 'issues') setIssues(updater); if (table === 'frozen') setFrozen(updater); if (table === 'features') setFeatures(updater); if (table === 'refunds') setRefunds(updater); if (table === 'profiles') setProfiles(updater); if (table === 'onboardings') setOnboardings(updater); if (table === 'meetings') setMeetings(updater); } } 
+    else { const res = await supabase.from(table).insert([payload]); error = res.error; }
+    if (error) alert('خطا: ' + error.message); else { setIsModalOpen(false); setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); }
   };
 
   const handleStatusChange = async (id, newStatus, table) => {
     if (!supabase) return;
-    const payload = { 
-        status: newStatus,
-        last_updated_by: loggedInUser || 'Admin', // Use loggedInUser
-        last_updated_at: new Date().toISOString()
-    };
+    const payload = { status: newStatus, last_updated_by: loggedInUser || 'Admin', last_updated_at: new Date().toISOString() };
     const { error } = await supabase.from(table).update(payload).eq('id', id);
-    if (!error) {
-      if (table === 'issues') { setIssues(prev => prev.map(i => i.id.toString() === id ? { ...i, ...payload } : i)); } 
-      else if (table === 'features') { setFeatures(prev => prev.map(f => f.id.toString() === id ? { ...f, ...payload } : f)); }
-    }
+    if (!error) { if (table === 'issues') setIssues(prev => prev.map(i => i.id.toString() === id ? { ...i, ...payload } : i)); else if (table === 'features') setFeatures(prev => prev.map(f => f.id.toString() === id ? { ...f, ...payload } : f)); }
   };
 
-  const openModal = (t, record = null) => {
-    setModalType(t);
-    if (record) { setEditingId(record.id); setFormData({ ...INITIAL_FORM_DATA, ...record }); } 
-    else { setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); }
-    setIsModalOpen(true);
-  };
+  const openModal = (t, record = null) => { setModalType(t); if (record) { setEditingId(record.id); setFormData({ ...INITIAL_FORM_DATA, ...record }); } else { setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); } setIsModalOpen(true); };
 
-  useEffect(() => { setTabTimeFilter(null); setTabCustomRange(null); }, [activeTab]);
-  
-  if (!isAuthed) {
-    return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-l from-slate-100 to-white dark:from-slate-900 dark:to-black p-4" dir="rtl">
-        <div className="bg-white dark:bg-slate-800 shadow-2xl rounded-3xl p-8 w-full max-w-md border dark:border-slate-700">
-          <h1 className="text-xl font-extrabold mb-4 text-center text-slate-800 dark:text-white">ورود به داشبورد پشتیبانی</h1>
-          {loginStep === 'username' ? (
-              <form onSubmit={handleUsernameSubmit} className="space-y-4 animate-in fade-in slide-in-from-right-8 duration-300">
-                <div><label className="text-xs text-gray-500 dark:text-gray-400 font-bold mb-1 block">نام کاربری</label><input type="text" className="w-full border dark:border-slate-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-500 text-left dark:bg-slate-700 dark:text-white" dir="ltr" placeholder="username" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} autoFocus /></div>
-                {loginError && <div className="text-xs text-red-500 text-center">{loginError}</div>}
-                <button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-sky-500 text-white rounded-xl py-2.5 text-sm font-bold flex items-center justify-center gap-2">ادامه <ArrowRight size={16}/></button>
-              </form>
-          ) : (
-              <form onSubmit={handlePasswordSubmit} className="space-y-4 animate-in fade-in slide-in-from-right-8 duration-300">
-                <div className="flex items-center justify-between mb-2"><span className="text-sm font-bold text-gray-700 dark:text-gray-300">{loginUsername}</span><button type="button" onClick={() => { setLoginStep('username'); setLoginError(''); }} className="text-xs text-blue-500 hover:underline">تغییر کاربر</button></div>
-                <div><label className="text-xs text-gray-500 dark:text-gray-400 font-bold mb-1 block">{loginStep === 'set-password' ? 'تعیین کلمه عبور جدید' : 'کلمه عبور'}</label><input type="password" className="w-full border dark:border-slate-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-500 dark:bg-slate-700 dark:text-white" placeholder="Password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} autoFocus /></div>
-                {loginError && <div className="text-xs text-red-500 text-center">{loginError}</div>}
-                <button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-sky-500 text-white rounded-xl py-2.5 text-sm font-bold">{loginStep === 'set-password' ? 'ثبت و ورود' : 'ورود'}</button>
-              </form>
-          )}
-        </div>
-      </div>
-    );
-  }
+  if (!isAuthed) return <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-l from-slate-100 to-white dark:from-slate-900 dark:to-black p-4" dir="rtl"><div className="bg-white dark:bg-slate-800 shadow-2xl rounded-3xl p-8 w-full max-w-md border dark:border-slate-700"><h1 className="text-xl font-extrabold mb-4 text-center text-slate-800 dark:text-white">ورود به داشبورد پشتیبانی</h1>{loginStep === 'username' ? (<form onSubmit={handleUsernameSubmit} className="space-y-4 animate-in fade-in slide-in-from-right-8 duration-300"><div><label className="text-xs text-gray-500 dark:text-gray-400 font-bold mb-1 block">نام کاربری</label><input type="text" className="w-full border dark:border-slate-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-500 text-left dark:bg-slate-700 dark:text-white" dir="ltr" placeholder="username" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} autoFocus /></div>{loginError && <div className="text-xs text-red-500 text-center">{loginError}</div>}<button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-sky-500 text-white rounded-xl py-2.5 text-sm font-bold flex items-center justify-center gap-2">ادامه <ArrowRight size={16}/></button></form>) : (<form onSubmit={handlePasswordSubmit} className="space-y-4 animate-in fade-in slide-in-from-right-8 duration-300"><div className="flex items-center justify-between mb-2"><span className="text-sm font-bold text-gray-700 dark:text-gray-300">{loginUsername}</span><button type="button" onClick={() => { setLoginStep('username'); setLoginError(''); }} className="text-xs text-blue-500 hover:underline">تغییر کاربر</button></div><div><label className="text-xs text-gray-500 dark:text-gray-400 font-bold mb-1 block">{loginStep === 'set-password' ? 'تعیین کلمه عبور جدید' : 'کلمه عبور'}</label><input type="password" className="w-full border dark:border-slate-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-500 dark:bg-slate-700 dark:text-white" placeholder="Password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} autoFocus /></div>{loginError && <div className="text-xs text-red-500 text-center">{loginError}</div>}<button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-sky-500 text-white rounded-xl py-2.5 text-sm font-bold">{loginStep === 'set-password' ? 'ثبت و ورود' : 'ورود'}</button></form>)}</div></div>;
 
   return (
     <div className="h-screen w-screen flex bg-[#F3F4F6] dark:bg-slate-950 overflow-hidden transition-colors duration-300" dir="rtl">
@@ -1074,11 +709,11 @@ export default function App() {
                 <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 h-80">
                    <div className="bg-white/70 dark:bg-slate-800/70 dark:border-slate-700 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col cursor-pointer hover:border-blue-200 transition" onClick={() => setExpandedChart('trend')}>
                       <h4 className="font-bold text-gray-700 dark:text-gray-200 text-sm mb-4 flex items-center gap-2 justify-between"><span className="flex items-center gap-2"><TrendingUp size={16} className="text-blue-500"/>روند ثبت مشکلات</span><Maximize2 size={14} className="text-gray-400"/></h4>
-                      <div className="flex-1 w-full pointer-events-none"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><defs><linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="date" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: '11px'}} /><Area type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={2} fill="url(#colorCount)" /></AreaChart></ResponsiveContainer></div>
+                      <div className="w-full h-64 pointer-events-none"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><defs><linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="date" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: '11px'}} /><Area type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={2} fill="url(#colorCount)" /></AreaChart></ResponsiveContainer></div>
                    </div>
                    <div className="bg-white/70 dark:bg-slate-800/70 dark:border-slate-700 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col cursor-pointer hover:border-green-200 transition" onClick={() => setExpandedChart('cohort')}>
                       <h4 className="font-bold text-gray-700 dark:text-gray-200 text-sm mb-4 flex items-center justify-between"><span>نرخ فعال‌سازی کاربران</span><Maximize2 size={14} className="text-gray-400"/></h4>
-                      <div className="flex-1 w-full pointer-events-none"><CohortChart onboardings={filteredOnboardings} /></div>
+                      <CohortChart onboardings={filteredOnboardings} />
                    </div>
                 </div>
               </div>
@@ -1143,176 +778,27 @@ export default function App() {
               <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-red-500"><X size={20} /></button>
             </div>
             <form onSubmit={handleSave} className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
-                {/* Onboarding Specific Fields */}
                 {modalType === 'onboarding' ? (
                     <div className="space-y-4">
-                        <UserSearchInput 
-                            value={formData.username} 
-                            onChange={(val) => setFormData(p => ({ ...p, username: val }))} 
-                            onSelect={(u) => setFormData(p => ({ ...p, username: u.username, phone_number: u.phone_number || '' }))}
-                            allUsers={allUsers} 
-                        />
-                        
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-gray-500">درصد پیشرفت ({formData.progress}%)</label>
-                            <input type="range" min="0" max="100" step="5" value={formData.progress || 0} onChange={(e) => setFormData({...formData, progress: e.target.value})} className="w-full accent-indigo-600 cursor-pointer"/>
-                        </div>
-
+                        <UserSearchInput value={formData.username} onChange={(val) => setFormData(p => ({ ...p, username: val }))} onSelect={(u) => setFormData(p => ({ ...p, username: u.username, phone_number: u.phone_number || '' }))} allUsers={allUsers} />
+                        <div className="space-y-1"><label className="text-xs font-bold text-gray-500">درصد پیشرفت ({formData.progress}%)</label><input type="range" min="0" max="100" step="5" value={formData.progress || 0} onChange={(e) => setFormData({...formData, progress: e.target.value})} className="w-full accent-indigo-600 cursor-pointer"/></div>
                         <select value={formData.has_website || 'false'} onChange={(e) => setFormData({...formData, has_website: e.target.value})} className="border p-3 rounded-xl text-sm w-full"><option value="false">وبسایت ندارد</option><option value="true">وبسایت دارد</option></select>
-
-                        {/* Section 1: Call */}
-                        <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded-xl space-y-2 border dark:border-slate-600">
-                            <h4 className="font-bold text-gray-700 dark:text-gray-200 text-xs">۱. تماس اولیه</h4>
-                            <div className="grid grid-cols-2 gap-2">
-                                <select value={formData.initial_call_status || ''} onChange={(e) => setFormData({...formData, initial_call_status: e.target.value})} className="border p-2 rounded-lg text-xs w-full dark:bg-slate-800 dark:border-slate-600 dark:text-white"><option value="">وضعیت...</option><option value="پاسخ داد">پاسخ داد</option><option value="پاسخ نداد">پاسخ نداد</option><option value="رد تماس">رد تماس</option></select>
-                                <input type="text" placeholder="تاریخ (۱۴۰۳/...)" value={formData.call_date || ''} onChange={(e) => setFormData({...formData, call_date: e.target.value})} className="border p-2 rounded-lg text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-white"/>
-                            </div>
-                            <div className="relative">
-                                <textarea placeholder="خلاصه مکالمه..." rows="2" value={formData.conversation_summary || ''} onChange={(e) => setFormData({...formData, conversation_summary: e.target.value})} className="w-full border p-2 rounded-lg text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-white"/>
-                                <div className="absolute left-1 bottom-1"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, conversation_summary: (p.conversation_summary || '') + ' ' + text}))} /></div>
-                            </div>
-                        </div>
-
-                        {/* Section 2: Meeting */}
-                        <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded-xl space-y-2 border dark:border-slate-600">
-                            <h4 className="font-bold text-gray-700 dark:text-gray-200 text-xs">۲. جلسه آنلاین</h4>
-                            <input type="text" placeholder="تاریخ جلسه" value={formData.meeting_date || ''} onChange={(e) => setFormData({...formData, meeting_date: e.target.value})} className="border p-2 rounded-lg text-xs w-full dark:bg-slate-800 dark:border-slate-600 dark:text-white"/>
-                            <div className="relative">
-                                <textarea placeholder="توضیحات جلسه..." rows="2" value={formData.meeting_note || ''} onChange={(e) => setFormData({...formData, meeting_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-white"/>
-                                <div className="absolute left-1 bottom-1"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, meeting_note: (p.meeting_note || '') + ' ' + text}))} /></div>
-                            </div>
-                        </div>
-
-                        {/* Section 3: Followup */}
-                        <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded-xl space-y-2 border dark:border-slate-600">
-                            <h4 className="font-bold text-gray-700 dark:text-gray-200 text-xs">۳. پیگیری بعدی</h4>
-                            <input type="text" placeholder="تاریخ فالوآپ" value={formData.followup_date || ''} onChange={(e) => setFormData({...formData, followup_date: e.target.value})} className="border p-2 rounded-lg text-xs w-full dark:bg-slate-800 dark:border-slate-600 dark:text-white"/>
-                            <div className="relative">
-                                <textarea placeholder="توضیحات پیگیری..." rows="2" value={formData.followup_note || ''} onChange={(e) => setFormData({...formData, followup_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs dark:bg-slate-800 dark:border-slate-600 dark:text-white"/>
-                                <div className="absolute left-1 bottom-1"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, followup_note: (p.followup_note || '') + ' ' + text}))} /></div>
-                            </div>
-                        </div>
+                        <div className="bg-slate-50 p-3 rounded-xl space-y-2 border"><h4 className="font-bold text-gray-700 text-xs">۱. تماس اولیه</h4><div className="grid grid-cols-2 gap-2"><select value={formData.initial_call_status || ''} onChange={(e) => setFormData({...formData, initial_call_status: e.target.value})} className="border p-2 rounded-lg text-xs w-full"><option value="">وضعیت...</option><option value="پاسخ داد">پاسخ داد</option><option value="پاسخ نداد">پاسخ نداد</option><option value="رد تماس">رد تماس</option></select><input type="text" placeholder="تاریخ (۱۴۰۳/...)" value={formData.call_date || ''} onChange={(e) => setFormData({...formData, call_date: e.target.value})} className="border p-2 rounded-lg text-xs"/></div><textarea placeholder="خلاصه مکالمه..." rows="2" value={formData.conversation_summary || ''} onChange={(e) => setFormData({...formData, conversation_summary: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/></div>
+                        <div className="bg-slate-50 p-3 rounded-xl space-y-2 border"><h4 className="font-bold text-gray-700 text-xs">۲. جلسه آنلاین</h4><input type="text" placeholder="تاریخ جلسه" value={formData.meeting_date || ''} onChange={(e) => setFormData({...formData, meeting_date: e.target.value})} className="border p-2 rounded-lg text-xs w-full"/><textarea placeholder="توضیحات جلسه..." rows="2" value={formData.meeting_note || ''} onChange={(e) => setFormData({...formData, meeting_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/></div>
+                        <div className="bg-slate-50 p-3 rounded-xl space-y-2 border"><h4 className="font-bold text-gray-700 text-xs">۳. پیگیری بعدی</h4><input type="text" placeholder="تاریخ فالوآپ" value={formData.followup_date || ''} onChange={(e) => setFormData({...formData, followup_date: e.target.value})} className="border p-2 rounded-lg text-xs w-full"/><textarea placeholder="توضیحات پیگیری..." rows="2" value={formData.followup_note || ''} onChange={(e) => setFormData({...formData, followup_note: e.target.value})} className="w-full border p-2 rounded-lg text-xs"/></div>
                     </div>
                 ) : (
-                    /* Default Fields for other types */
                     <>
-                        <div className="space-y-1">
-                            <label className="text-xs text-gray-500 font-medium">نام کاربری</label>
-                            <UserSearchInput 
-                                value={formData.username || ''} 
-                                onChange={(val) => setFormData(prev => ({ ...prev, username: val }))} 
-                                onSelect={(u) => setFormData(prev => ({ ...prev, username: u.username, phone_number: u.phone_number || prev.phone_number, instagram_username: u.instagram_username || prev.instagram_username }))}
-                                allUsers={allUsers}
-                            />
-                        </div>
-                        
-                        {/* Date field for reports (not profile, not onboarding) */}
-                        {modalType !== 'profile' && (
-                             <div className="space-y-1">
-                                 <label className="text-xs text-gray-500 font-medium">تاریخ ثبت</label>
-                                 <div className="w-full">
-                                     <DatePicker 
-                                        calendar={persian} 
-                                        locale={persian_fa} 
-                                        value={formData.date || new Date()} 
-                                        onChange={(date) => setFormData({...formData, date: date})}
-                                        inputClass="w-full border p-3 rounded-xl text-sm outline-none focus:border-blue-500"
-                                     />
-                                 </div>
-                             </div>
-                        )}
-
-                        {/* Common inputs */}
-                        <div className="grid grid-cols-2 gap-3">
-                            <input placeholder="شماره تماس" value={formData.phone_number || ''} onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                            <input placeholder="اینستاگرام" value={formData.instagram_username || ''} onChange={(e) => setFormData({ ...formData, instagram_username: e.target.value })} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                        </div>
-
-                        {modalType === 'profile' && (
-                            <>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <input placeholder="آیدی تلگرام" value={formData.telegram_id || ''} onChange={(e) => setFormData({...formData, telegram_id: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                                    <input placeholder="وبسایت" value={formData.website || ''} onChange={(e) => setFormData({...formData, website: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                                </div>
-                                <textarea placeholder="بیوگرافی..." rows="3" value={formData.bio || ''} onChange={(e) => setFormData({...formData, bio: e.target.value})} className="w-full border p-3 rounded-xl text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                            </>
-                        )}
-                        
-                        {/* Issue Specific */}
-                        {modalType === 'issue' && (
-                            <>
-                                <select value={formData.status || 'باز'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white"><option value="باز">باز</option><option value="در حال بررسی">در حال بررسی</option><option value="حل‌شده">حل‌شده</option></select>
-                                <div className="relative">
-                                    <textarea rows="3" placeholder="شرح مشکل..." value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                                    <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, desc_text: (p.desc_text || '') + ' ' + text}))} /></div>
-                                </div>
-                                <div className="mt-3 flex items-center gap-2">
-                                    <input type="checkbox" id="tech_review" checked={formData.technical_review || false} onChange={(e) => setFormData({...formData, technical_review: e.target.checked})} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300"/>
-                                    <label htmlFor="tech_review" className="text-sm text-gray-700 dark:text-gray-300 font-bold flex items-center gap-1"><Wrench size={14} className="text-gray-500"/> بررسی توسط تیم فنی</label>
-                                </div>
-                                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 font-bold">اولویت</div>
-                                <select value={formData.flag || ''} onChange={(e) => setFormData({...formData, flag: e.target.value})} className="border p-3 rounded-xl text-sm w-full mt-1 dark:bg-slate-700 dark:border-slate-600 dark:text-white"><option value="">عادی</option><option value="پیگیری مهم">پیگیری مهم</option><option value="پیگیری فوری">پیگیری فوری</option></select>
-                            </>
-                        )}
-                        
-                        {/* Feature Specific */}
-                        {modalType === 'feature' && (
-                            <>
-                                <select value={formData.status || 'بررسی نشده'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white"><option value="بررسی نشده">بررسی نشده</option><option value="در تحلیل">در تحلیل</option><option value="در توسعه">در توسعه</option><option value="انجام شد">انجام شد</option></select>
-                                <input placeholder="عنوان فیچر" value={formData.title || ''} onChange={(e) => setFormData({...formData, title: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                                <div className="relative">
-                                    <textarea rows="3" placeholder="توضیحات..." value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                                    <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, desc_text: (p.desc_text || '') + ' ' + text}))} /></div>
-                                </div>
-                            </>
-                        )}
-
-                        {/* Meeting Form */}
-                        {modalType === 'meeting' && (
-                            <div className="space-y-3">
-                                <div className="space-y-1">
-                                    <label className="text-xs text-gray-500 font-medium">تاریخ و زمان جلسه</label>
-                                    <div className="flex gap-2">
-                                        <div className="flex-1">
-                                            <DatePicker 
-                                                calendar={persian} 
-                                                locale={persian_fa} 
-                                                value={formData.date || new Date()} 
-                                                onChange={(date) => setFormData({...formData, date: date})}
-                                                inputClass="w-full border p-3 rounded-xl text-sm outline-none focus:border-blue-500"
-                                            />
-                                        </div>
-                                        <input type="time" value={formData.meeting_time || ''} onChange={(e) => setFormData({...formData, meeting_time: e.target.value})} className="border p-3 rounded-xl text-sm w-24 outline-none focus:border-blue-500"/>
-                                    </div>
-                                </div>
-                                <div className="relative">
-                                    <textarea rows="2" placeholder="علت جلسه..." value={formData.reason || ''} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
-                                    <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, reason: (p.reason || '') + ' ' + text}))} /></div>
-                                </div>
-                                <div className="relative">
-                                    <textarea rows="2" placeholder="نتیجه جلسه..." value={formData.result || ''} onChange={(e) => setFormData({ ...formData, result: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
-                                    <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, result: (p.result || '') + ' ' + text}))} /></div>
-                                </div>
-                                <div className="flex items-center gap-2 mt-2">
-                                    <input type="checkbox" id="meeting_held" checked={formData.held || false} onChange={(e) => setFormData({...formData, held: e.target.checked})} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300"/>
-                                    <label htmlFor="meeting_held" className="text-sm text-gray-700 font-bold">جلسه برگزار شد</label>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Frozen & Refund simple forms */}
-                        {(modalType === 'frozen' || modalType === 'refund') && (
-                             <div className="relative">
-                                 <textarea rows="3" placeholder="توضیحات..." value={formData.desc_text || formData.reason || ''} onChange={(e) => setFormData({ ...formData, [modalType === 'refund' ? 'reason' : 'desc_text']: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
-                                 <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => {
-                                     const field = modalType === 'refund' ? 'reason' : 'desc_text';
-                                     setFormData(p => ({...p, [field]: (p[field] || '') + ' ' + text}));
-                                 }} /></div>
-                             </div>
-                        )}
+                        <div className="space-y-1"><label className="text-xs text-gray-500 font-medium">نام کاربری</label><UserSearchInput value={formData.username || ''} onChange={(val) => setFormData(prev => ({ ...prev, username: val }))} onSelect={(u) => setFormData(prev => ({ ...prev, username: u.username, phone_number: u.phone_number || prev.phone_number, instagram_username: u.instagram_username || prev.instagram_username }))} allUsers={allUsers}/></div>
+                        {modalType !== 'profile' && (<div className="space-y-1"><label className="text-xs text-gray-500 font-medium">تاریخ ثبت</label><div className="w-full"><DatePicker calendar={persian} locale={persian_fa} value={formData.date || new Date()} onChange={(date) => setFormData({...formData, date: date})} inputClass="w-full border p-3 rounded-xl text-sm outline-none focus:border-blue-500" /></div></div>)}
+                        <div className="grid grid-cols-2 gap-3"><input placeholder="شماره تماس" value={formData.phone_number || ''} onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })} className="border p-3 rounded-xl text-sm w-full" /><input placeholder="اینستاگرام" value={formData.instagram_username || ''} onChange={(e) => setFormData({ ...formData, instagram_username: e.target.value })} className="border p-3 rounded-xl text-sm w-full" /></div>
+                        {modalType === 'profile' && (<><div className="grid grid-cols-2 gap-3"><input placeholder="آیدی تلگرام" value={formData.telegram_id || ''} onChange={(e) => setFormData({...formData, telegram_id: e.target.value})} className="border p-3 rounded-xl text-sm w-full" /><input placeholder="وبسایت" value={formData.website || ''} onChange={(e) => setFormData({...formData, website: e.target.value})} className="border p-3 rounded-xl text-sm w-full" /></div><textarea placeholder="بیوگرافی..." rows="3" value={formData.bio || ''} onChange={(e) => setFormData({...formData, bio: e.target.value})} className="w-full border p-3 rounded-xl text-sm" /></>)}
+                        {modalType === 'issue' && (<><select value={formData.status || 'باز'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full"><option value="باز">باز</option><option value="در حال بررسی">در حال بررسی</option><option value="حل‌شده">حل‌شده</option></select><div className="relative"><textarea rows="3" placeholder="شرح مشکل..." value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl text-sm" /><div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, desc_text: (p.desc_text || '') + ' ' + text}))} /></div></div><div className="mt-3 flex items-center gap-2"><input type="checkbox" id="tech_review" checked={formData.technical_review || false} onChange={(e) => setFormData({...formData, technical_review: e.target.checked})} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300"/><label htmlFor="tech_review" className="text-sm text-gray-700 font-bold flex items-center gap-1"><Wrench size={14} className="text-gray-500"/> بررسی توسط تیم فنی</label></div><div className="mt-2 text-xs text-gray-500 font-bold">اولویت</div><select value={formData.flag || ''} onChange={(e) => setFormData({...formData, flag: e.target.value})} className="border p-3 rounded-xl text-sm w-full mt-1"><option value="">عادی</option><option value="پیگیری مهم">پیگیری مهم</option><option value="پیگیری فوری">پیگیری فوری</option></select></>)}
+                        {modalType === 'feature' && (<><select value={formData.status || 'بررسی نشده'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full"><option value="بررسی نشده">بررسی نشده</option><option value="در تحلیل">در تحلیل</option><option value="در توسعه">در توسعه</option><option value="انجام شد">انجام شد</option></select><input placeholder="عنوان فیچر" value={formData.title || ''} onChange={(e) => setFormData({...formData, title: e.target.value})} className="border p-3 rounded-xl text-sm w-full" /><div className="relative"><textarea rows="3" placeholder="توضیحات..." value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl text-sm" /><div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, desc_text: (p.desc_text || '') + ' ' + text}))} /></div></div></>)}
+                        {modalType === 'meeting' && (<div className="space-y-3"><div className="space-y-1"><label className="text-xs text-gray-500 font-medium">تاریخ و زمان جلسه</label><div className="flex gap-2"><div className="flex-1"><DatePicker calendar={persian} locale={persian_fa} value={formData.date || new Date()} onChange={(date) => setFormData({...formData, date: date})} inputClass="w-full border p-3 rounded-xl text-sm outline-none focus:border-blue-500"/></div><input type="time" value={formData.meeting_time || ''} onChange={(e) => setFormData({...formData, meeting_time: e.target.value})} className="border p-3 rounded-xl text-sm w-24 outline-none focus:border-blue-500"/></div></div><div className="relative"><textarea rows="2" placeholder="علت جلسه..." value={formData.reason || ''} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} className="w-full border p-3 rounded-xl text-sm" /><div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, reason: (p.reason || '') + ' ' + text}))} /></div></div><div className="relative"><textarea rows="2" placeholder="نتیجه جلسه..." value={formData.result || ''} onChange={(e) => setFormData({ ...formData, result: e.target.value })} className="w-full border p-3 rounded-xl text-sm" /><div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, result: (p.result || '') + ' ' + text}))} /></div></div><div className="flex items-center gap-2 mt-2"><input type="checkbox" id="meeting_held" checked={formData.held || false} onChange={(e) => setFormData({...formData, held: e.target.checked})} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300"/><label htmlFor="meeting_held" className="text-sm text-gray-700 font-bold">جلسه برگزار شد</label></div></div>)}
+                        {(modalType === 'frozen' || modalType === 'refund') && (<div className="relative"><textarea rows="3" placeholder="توضیحات..." value={formData.desc_text || formData.reason || ''} onChange={(e) => setFormData({ ...formData, [modalType === 'refund' ? 'reason' : 'desc_text']: e.target.value })} className="w-full border p-3 rounded-xl text-sm" /><div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => { const field = modalType === 'refund' ? 'reason' : 'desc_text'; setFormData(p => ({...p, [field]: (p[field] || '') + ' ' + text})); }} /></div></div>)}
                     </>
                 )}
-
                 <button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-blue-500 text-white p-3 rounded-xl font-bold hover:shadow-lg mt-4 text-sm">ذخیره</button>
             </form>
           </div>
