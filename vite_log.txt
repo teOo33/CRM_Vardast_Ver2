@@ -1,9 +1,5 @@
 
-  VITE v7.2.7  ready in 561 ms
+  VITE v7.2.7  ready in 645 ms
 
   ➜  Local:   http://localhost:3000/
   ➜  Network: use --host to expose
-9:26:52 PM [vite] (client) page reload src/App.jsx
-9:27:15 PM [vite] (client) page reload src/App.jsx
-9:44:22 PM [vite] (client) page reload src/App.jsx
-9:48:16 PM [vite] (client) page reload src/App.jsx
