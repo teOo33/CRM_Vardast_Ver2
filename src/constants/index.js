@@ -4,7 +4,7 @@ export const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const appPassword = import.meta.env.VITE_APP_PASSWORD || '';
 
 // --- Vardast Settings ---
-export const VARDAST_API_KEY = import.meta.env.VITE_VARDAST_API_KEY;
+export const VARDAST_API_KEY = "DVmo0Hi2NHQE3kLx-Q7V3NWZBophr_kKDlTXrj7bdtQ";
 export const VARDAST_CHANNEL_ID = "a5211d3f-f59a-4a0e-b604-dabef603810c"; 
 export const VARDAST_BASE_URL = "https://apigw.vardast.chat/uaa/public";
 
