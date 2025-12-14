@@ -173,7 +173,6 @@ export default function App() {
       if (typeof window === 'undefined') return false;
       const authed = localStorage.getItem('vardast_ops_authed') === '1';
       const user = localStorage.getItem('vardast_ops_user');
-      // Only authorize if BOTH flag is set AND user exists
       return authed && !!user;
   });
 
@@ -333,7 +332,7 @@ export default function App() {
   
   const handleAiChurnAnalysis = async (user) => { 
       setAiLoading(true); 
-      const prompt = getChurnAnalysisPrompt(user);
+      const prompt = getChurnAnalysisPrompt(user, filteredIssues, filteredFrozen, filteredRefunds);
       const res = await callVardastAI(prompt); 
       setAiLoading(false); 
       if (res) alert(res); 
@@ -394,32 +393,26 @@ export default function App() {
     // Determine Table and Payload
     if (modalType === 'issue') {
       table = 'issues';
-      payload = { ...commonFields, desc_text: formData.desc_text, module: formData.module, type: formData.type, status: formData.status || 'باز', support: formData.support, subscription_status: formData.subscription_status, resolved_at: formData.resolved_at, technical_note: formData.technical_note, technical_review: formData.technical_review };
-      if (!isEdit) payload.created_at = createdTimestamp;
+      payload = { ...commonFields, desc_text: formData.desc_text, module: formData.module, type: formData.type, status: formData.status || 'باز', support: formData.support, subscription_status: formData.subscription_status, resolved_at: formData.resolved_at, technical_note: formData.technical_note, technical_review: formData.technical_review, created_at: createdTimestamp };
     } else if (modalType === 'frozen') {
       table = 'frozen';
-      payload = { ...commonFields, desc_text: formData.desc_text, module: formData.module, cause: formData.cause, status: formData.status || 'فریز', subscription_status: formData.subscription_status, first_frozen_at: formData.first_frozen_at, freeze_count: formData.freeze_count ? Number(formData.freeze_count) : null, last_frozen_at: formData.last_frozen_at, resolve_status: formData.resolve_status, note: formData.note };
-      if (!isEdit) payload.frozen_at = createdTimestamp;
+      payload = { ...commonFields, desc_text: formData.desc_text, module: formData.module, cause: formData.cause, status: formData.status || 'فریز', subscription_status: formData.subscription_status, first_frozen_at: formData.first_frozen_at, freeze_count: formData.freeze_count ? Number(formData.freeze_count) : null, last_frozen_at: formData.last_frozen_at, resolve_status: formData.resolve_status, note: formData.note, frozen_at: createdTimestamp };
     } else if (modalType === 'feature') {
       table = 'features';
-      payload = { ...commonFields, desc_text: formData.desc_text, title: formData.title, category: formData.category, status: formData.status || 'بررسی نشده', repeat_count: formData.repeat_count ? Number(formData.repeat_count) : null, importance: formData.importance ? Number(formData.importance) : null, internal_note: formData.internal_note };
-      if (!isEdit) payload.created_at = createdTimestamp;
+      payload = { ...commonFields, desc_text: formData.desc_text, title: formData.title, category: formData.category, status: formData.status || 'بررسی نشده', repeat_count: formData.repeat_count ? Number(formData.repeat_count) : null, importance: formData.importance ? Number(formData.importance) : null, internal_note: formData.internal_note, created_at: createdTimestamp };
     } else if (modalType === 'refund') {
       table = 'refunds';
-      payload = { ...commonFields, reason: formData.reason, duration: formData.duration, category: formData.category, action: formData.action || 'در حال بررسی', status: formData.status || 'در بررسی', suggestion: formData.suggestion, can_return: formData.can_return, sales_source: formData.sales_source, ops_note: formData.ops_note };
-      if (!isEdit) payload.requested_at = createdTimestamp;
+      payload = { ...commonFields, reason: formData.reason, duration: formData.duration, category: formData.category, action: formData.action || 'در حال بررسی', status: formData.status || 'در بررسی', suggestion: formData.suggestion, can_return: formData.can_return, sales_source: formData.sales_source, ops_note: formData.ops_note, requested_at: createdTimestamp };
     } else if (modalType === 'profile') {
       table = 'profiles';
-      payload = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, telegram_id: formData.telegram_id, website: formData.website, bio: formData.bio };
-      if (!isEdit) payload.created_at = createdTimestamp;
+      payload = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, telegram_id: formData.telegram_id, website: formData.website, bio: formData.bio, created_at: createdTimestamp };
     } else if (modalType === 'meeting') {
         table = 'meetings';
-        payload = { username: formData.username, date: formData.date ? (formData.date.toDate ? formData.date.toDate().toISOString() : new Date(formData.date).toISOString()) : new Date().toISOString(), meeting_time: formData.meeting_time, reason: formData.reason, result: formData.result, held: formData.held === true || formData.held === 'true', created_by: formData.created_by || loggedInUser };
-        if (!isEdit) payload.created_at = createdTimestamp;
+        payload = { username: formData.username, date: createdTimestamp, meeting_time: formData.meeting_time, reason: formData.reason, result: formData.result, held: formData.held === true || formData.held === 'true', created_by: formData.created_by || loggedInUser };
+        // date update is handled by `date: createdTimestamp`
     } else if (modalType === 'onboarding') {
       table = 'onboardings';
-      payload = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, telegram_id: formData.telegram_id, has_website: formData.has_website === 'true' || formData.has_website === true, progress: Number(formData.progress), initial_call_status: formData.initial_call_status, conversation_summary: formData.conversation_summary, call_date: formData.call_date, meeting_date: formData.meeting_date, meeting_note: formData.meeting_note, followup_date: formData.followup_date, followup_note: formData.followup_note };
-      if (!isEdit) payload.created_at = createdTimestamp;
+      payload = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, telegram_id: formData.telegram_id, has_website: formData.has_website === 'true' || formData.has_website === true, progress: Number(formData.progress), initial_call_status: formData.initial_call_status, conversation_summary: formData.conversation_summary, call_date: formData.call_date, meeting_date: formData.meeting_date, meeting_note: formData.meeting_note, followup_date: formData.followup_date, followup_note: formData.followup_note, created_at: createdTimestamp };
       
       const createMeeting = async (date, type) => {
           let mDate = date;
@@ -463,7 +456,20 @@ export default function App() {
         else if (table === 'meetings') currentRecord = meetings.find(r => r.id === editingId);
 
         const prevHistory = currentRecord?.history || [];
-        const newEntry = { user: currentUser, date: new Date().toISOString(), action: 'edit' };
+        const changes = [];
+        if (currentRecord) {
+            Object.keys(payload).forEach(key => {
+                if (key === 'history' || key === 'last_updated_by' || key === 'last_updated_at') return;
+                let oldValue = currentRecord[key];
+                let newValue = payload[key];
+                if (oldValue != newValue) {
+                     if ((!oldValue && !newValue)) return;
+                     changes.push({ field: key, old: oldValue, new: newValue });
+                }
+            });
+        }
+
+        const newEntry = { user: currentUser, date: new Date().toISOString(), action: 'edit', changes: changes };
         payload.history = [newEntry, ...prevHistory];
         payload.last_updated_by = currentUser;
         payload.last_updated_at = new Date().toISOString();
@@ -505,7 +511,7 @@ export default function App() {
             last_updated_at: new Date().toISOString()
         };
         if (table === 'issues' && newStatus === 'حل‌شده') {
-            payload.flag = null;
+            payload.flag = '';
         }
     }
 
@@ -521,7 +527,11 @@ export default function App() {
 
   const openModal = (t, record = null) => {
     setModalType(t);
-    if (record) { setEditingId(record.id); setFormData({ ...INITIAL_FORM_DATA, ...record }); } 
+    if (record) { 
+        setEditingId(record.id); 
+        let dateVal = record.date || record.created_at || record.frozen_at || record.requested_at;
+        setFormData({ ...INITIAL_FORM_DATA, ...record, date: dateVal }); 
+    } 
     else { setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); }
     setIsModalOpen(true);
   };
@@ -691,7 +701,7 @@ export default function App() {
             </section>
           )}
           {activeTab === 'users' && (profileSearch ? <UserProfile usersData={allUsers} issues={issues} frozen={frozen} features={features} refunds={refunds} onboardings={onboardings} meetings={meetings} openModal={openModal} profileSearch={profileSearch} setProfileSearch={setProfileSearch} /> : <UsersTab users={allUsers} navigateToProfile={navigateToProfile} />)}
-          {activeTab === 'ai-analysis' && <AIAnalysisTab issues={filteredIssues} onboardings={filteredOnboardings} features={filteredFeatures} navigateToProfile={navigateToProfile} />}
+          {activeTab === 'ai-analysis' && <AIAnalysisTab issues={filteredIssues} onboardings={filteredOnboardings} features={filteredFeatures} meetings={filteredMeetings} navigateToProfile={navigateToProfile} />}
           {activeTab === 'frozen' && (
              <div className="h-full flex flex-col">
               <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-2xl border shadow-sm">
