@@ -1,5 +1,5 @@
 export const getChurnAnalysisPrompt = (user, issues, frozen, refunds) => {
-    // Filter records for this specific user
+    // فیلتر کردن رکوردهای مربوط به این کاربر خاص
     const userIssues = issues.filter(i => i.username === user.username);
     const userFrozen = frozen.filter(f => f.username === user.username);
     const userRefunds = refunds.filter(r => r.username === user.username);
@@ -16,7 +16,7 @@ export const getChurnAnalysisPrompt = (user, issues, frozen, refunds) => {
     Refund Requests:
     ${JSON.stringify(userRefunds)}
     
-    Task: Analyze the churn risk for this user based on the provided history.
+    Follow the ###Cherne Risk Calculation Instructions
     `;
 };
 
@@ -26,7 +26,7 @@ ${context}
 
 New Feature Description: "${description}"
 
-Task: Generate a short, concise Persian title for this new feature based on its description. Return ONLY the title.
+Follow the ###Feature Title Generation Guidelines
 `;
 
 export const getAnalysisPrompt = (type, data) => {
@@ -42,12 +42,14 @@ export const getAnalysisPrompt = (type, data) => {
     Data Type: ${typeName}
     Data: ${JSON.stringify(data)}
     
-    Task: Analyze the provided data and provide insights, trends, and summary in Persian.
+    Follow ###Comprehensive data analysis
     `;
 };
 
+// --- بدون تغییر ---
 export const getChatPrompt = (contextData, question) => `Context: ${JSON.stringify(contextData)}\n\nQuestion: ${question}`;
 
+// --- بدون تغییر ---
 export const getTechnicalIssueClassificationPrompt = (description, modules, types) => `
 Description: "${description}"
 

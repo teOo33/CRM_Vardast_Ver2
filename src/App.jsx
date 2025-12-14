@@ -89,6 +89,17 @@ import UserProfile from './components/UserProfile';
 import UsersTab from './components/UsersTab';
 import logo from './assets/logo.png';
 
+// React Bits Components
+import ClickSpark from './components/reactbits/ClickSpark';
+import StarBorder from './components/reactbits/StarBorder';
+import ElasticSlider from './components/reactbits/ElasticSlider';
+import SplitText from './components/reactbits/SplitText';
+import GradientText from './components/reactbits/GradientText';
+import VariableProximity from './components/reactbits/VariableProximity';
+import FadeContent from './components/reactbits/FadeContent';
+import Particles from './components/reactbits/Particles';
+import GridDistortion from './components/reactbits/GridDistortion';
+
 let supabase;
 try {
   if (supabaseUrl && supabaseUrl.startsWith('http')) {
@@ -409,7 +420,6 @@ export default function App() {
     } else if (modalType === 'meeting') {
         table = 'meetings';
         payload = { username: formData.username, date: createdTimestamp, meeting_time: formData.meeting_time, reason: formData.reason, result: formData.result, held: formData.held === true || formData.held === 'true', created_by: formData.created_by || loggedInUser };
-        // date update is handled by `date: createdTimestamp`
     } else if (modalType === 'onboarding') {
       table = 'onboardings';
       payload = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, telegram_id: formData.telegram_id, has_website: formData.has_website === 'true' || formData.has_website === true, progress: Number(formData.progress), initial_call_status: formData.initial_call_status, conversation_summary: formData.conversation_summary, call_date: formData.call_date, meeting_date: formData.meeting_date, meeting_note: formData.meeting_note, followup_date: formData.followup_date, followup_note: formData.followup_note, created_at: createdTimestamp };
@@ -541,20 +551,25 @@ export default function App() {
   if (!isAuthed) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-l from-slate-100 to-white dark:from-slate-900 dark:to-black p-4" dir="rtl">
-        <div className="bg-white dark:bg-slate-800 shadow-2xl rounded-3xl p-8 w-full max-w-md border dark:border-slate-700">
+        <GridDistortion />
+        <div className="bg-white dark:bg-slate-800 shadow-2xl rounded-3xl p-8 w-full max-w-md border dark:border-slate-700 relative z-10">
           <h1 className="text-xl font-extrabold mb-4 text-center text-slate-800 dark:text-white">ورود به داشبورد پشتیبانی</h1>
           {loginStep === 'username' ? (
               <form onSubmit={handleUsernameSubmit} className="space-y-4 animate-in fade-in slide-in-from-right-8 duration-300">
                 <div><label className="text-xs text-gray-500 dark:text-gray-400 font-bold mb-1 block">نام کاربری</label><input type="text" className="w-full border dark:border-slate-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-500 text-left dark:bg-slate-700 dark:text-white" dir="ltr" placeholder="username" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} autoFocus /></div>
                 {loginError && <div className="text-xs text-red-500 text-center">{loginError}</div>}
-                <button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-sky-500 text-white rounded-xl py-2.5 text-sm font-bold flex items-center justify-center gap-2">ادامه <ArrowRight size={16}/></button>
+                <ClickSpark className="w-full">
+                    <button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-sky-500 text-white rounded-xl py-2.5 text-sm font-bold flex items-center justify-center gap-2">ادامه <ArrowRight size={16}/></button>
+                </ClickSpark>
               </form>
           ) : (
               <form onSubmit={handlePasswordSubmit} className="space-y-4 animate-in fade-in slide-in-from-right-8 duration-300">
                 <div className="flex items-center justify-between mb-2"><span className="text-sm font-bold text-gray-700 dark:text-gray-300">{loginUsername}</span><button type="button" onClick={() => { setLoginStep('username'); setLoginError(''); }} className="text-xs text-blue-500 hover:underline">تغییر کاربر</button></div>
                 <div><label className="text-xs text-gray-500 dark:text-gray-400 font-bold mb-1 block">{loginStep === 'set-password' ? 'تعیین کلمه عبور جدید' : 'کلمه عبور'}</label><input type="password" className="w-full border dark:border-slate-600 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-blue-500 dark:bg-slate-700 dark:text-white" placeholder="Password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} autoFocus /></div>
                 {loginError && <div className="text-xs text-red-500 text-center">{loginError}</div>}
-                <button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-sky-500 text-white rounded-xl py-2.5 text-sm font-bold">{loginStep === 'set-password' ? 'ثبت و ورود' : 'ورود'}</button>
+                <ClickSpark className="w-full">
+                    <button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-sky-500 text-white rounded-xl py-2.5 text-sm font-bold">{loginStep === 'set-password' ? 'ثبت و ورود' : 'ورود'}</button>
+                </ClickSpark>
               </form>
           )}
         </div>
@@ -564,8 +579,7 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex bg-[#F3F4F6] dark:bg-slate-950 overflow-hidden transition-colors duration-300" dir="rtl">
-      <div className="fixed top-0 left-0 w-96 h-96 bg-blue-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob pointer-events-none dark:opacity-10"></div>
-      <div className="fixed top-0 right-0 w-96 h-96 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000 pointer-events-none dark:opacity-10"></div>
+      <Particles className="opacity-50" />
       
       <aside className={`${isSidebarOpen ? 'w-64' : 'w-0 md:w-20'} h-full bg-white/90 dark:bg-slate-900/90 dark:border-slate-800 backdrop-blur-xl border-l border-gray-200 flex flex-col transition-all duration-300 overflow-hidden fixed md:static inset-y-0 right-0 z-50 liquid-glass`}>
         <div className="p-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800 flex-shrink-0">
@@ -588,7 +602,7 @@ export default function App() {
             ].map((item) => (
             <button key={item.id} onClick={() => { setActiveTab(item.id); if(window.innerWidth < 768) setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm transition-all ${activeTab === item.id ? 'bg-blue-50 text-blue-700 font-bold border border-blue-100 dark:bg-slate-800 dark:border-slate-700 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800'}`}>
               <item.icon size={18} className="flex-shrink-0" />
-              {isSidebarOpen && <span>{item.label}</span>}
+              {isSidebarOpen && <VariableProximity label={item.label} className="text-sm" />}
             </button>
           ))}
         </nav>
@@ -601,13 +615,13 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="flex-1 h-full overflow-y-auto overflow-x-hidden">
-        <div className="px-4 sm:px-8 py-6 min-h-full">
+      <main className="flex-1 h-full overflow-y-auto overflow-x-hidden relative z-10">
+        <FadeContent className="px-4 sm:px-8 py-6 min-h-full">
           <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
             <div className="flex items-center gap-3">
               <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 bg-white dark:bg-slate-800 dark:text-white dark:border-slate-700 border rounded-xl shadow-sm text-gray-600"><Menu size={20} /></button>
-              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800 dark:text-white">داشبورد پشتیبانی</h1>
-              {loggedInUser && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-lg">کاربر: {loggedInUser}</span>}
+              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800 dark:text-white"><SplitText text="داشبورد پشتیبانی" /></h1>
+              {loggedInUser && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-lg">کاربر: <GradientText>{loggedInUser}</GradientText></span>}
             </div>
             {activeTab === 'dashboard' && (<TimeFilter value={globalTimeFilter} onChange={setGlobalTimeFilter} customRange={globalCustomRange} onCustomChange={setGlobalCustomRange} />)}
             {['issues', 'frozen', 'features', 'refunds', 'onboarding', 'meetings'].includes(activeTab) && (<TimeFilter value={tabTimeFilter} onChange={setTabTimeFilter} customRange={tabCustomRange} onCustomChange={setTabCustomRange} />)}
@@ -643,7 +657,11 @@ export default function App() {
                         {churnRisks.length === 0 ? (<div className="h-full flex flex-col items-center justify-center text-gray-400"><CheckCircle2 size={40} className="text-emerald-500 mb-2" /><span className="text-xs">هیچ کاربری در خطر نیست!</span></div>) : churnRisks.map((user, idx) => (
                         <div key={idx} className="bg-white dark:bg-slate-700 border border-red-50 dark:border-slate-600 p-3 rounded-xl shadow-sm">
                             <div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2 cursor-pointer" onClick={() => navigateToProfile(user.username)}><UserAvatar name={user.username} size="sm"/><span className="font-bold text-sm text-gray-800 dark:text-white">{user.username}</span></div><span className="bg-red-50 text-red-600 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-red-100">{user.count} خطا</span></div>
-                            <button onClick={() => handleAiChurnAnalysis(user)} className="w-full flex items-center justify-center gap-1 text-[10px] text-purple-600 bg-purple-50 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-100 dark:border-purple-800 hover:bg-purple-600 hover:text-white dark:hover:bg-purple-600 dark:hover:text-white px-3 py-1.5 rounded-lg transition">{aiLoading ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}تحلیل هوشمند</button>
+                            <StarBorder as="button" onClick={() => handleAiChurnAnalysis(user)} className="w-full" speed="4s">
+                                <div className="flex items-center justify-center gap-1 text-[10px] py-1.5 w-full">
+                                    {aiLoading ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}تحلیل هوشمند
+                                </div>
+                            </StarBorder>
                         </div>
                         ))}
                     </div>
@@ -688,7 +706,7 @@ export default function App() {
                 </div>
                 <button onClick={() => openModal('issue')} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-200 flex items-center gap-2"><Plus size={16}/> ثبت مشکل</button>
               </div>
-              {issueViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredIssues} onStatusChange={(id, status) => handleStatusChange(id, status, 'issues')} columns={{'باز': 'باز', 'در حال بررسی': 'در حال بررسی', 'حل‌شده': 'حل‌شده'}} navigateToProfile={navigateToProfile} openModal={openModal} type="issue" setHistoryModalData={setHistoryModalData} /></div>) : (<div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 dark:bg-slate-900 text-gray-500 dark:text-gray-400 border-b dark:border-slate-700"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4">تاریخ</th><th className="p-4"></th></tr></thead><tbody>{filteredIssues.map(row => (<tr key={row.id} className={`border-b dark:border-slate-700 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-blue-600 dark:text-white" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4"><div className="flex items-center gap-2">{row.technical_review && <div className="bg-indigo-100 p-1 rounded-md text-indigo-600" title="بررسی فنی"><Wrench size={12}/></div>}<span className="truncate max-w-xs dark:text-gray-300">{row.desc_text}</span></div></td><td className="p-4"><span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-600 text-xs border border-blue-100">{row.status}</span></td><td className="p-4 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4 font-mono text-xs text-gray-400">{formatDate(row.created_at)}</td><td className="p-4 text-left"><button onClick={() => openModal('issue', row)} className="text-gray-400 hover:text-blue-600"><Edit size={16}/></button></td></tr>))}</tbody></table></div>)}
+              {issueViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredIssues} onStatusChange={(id, status) => handleStatusChange(id, status, 'issues')} columns={{'باز': 'باز', 'در حال بررسی': 'در حال بررسی', 'حل‌شده': 'حل‌شده'}} navigateToProfile={navigateToProfile} openModal={openModal} type="issue" setHistoryModalData={setHistoryModalData} /></div>) : (<div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 dark:bg-slate-900 text-gray-500 dark:text-gray-400 border-b dark:border-slate-700"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4">تاریخ</th><th className="p-4"></th></tr></thead><tbody>{filteredIssues.map(row => (<tr key={row.id} className={`border-b dark:border-slate-700 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-blue-600 dark:text-white" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4"><div className="flex items-center gap-2">{row.technical_review && <div className="bg-indigo-100 p-1 rounded-md text-indigo-600" title="بررسی فنی"><Wrench size={12}/></div>}<span className="truncate max-w-xs dark:text-gray-300">{row.desc_text}</span></div></td><td className="p-4"><span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-600 text-xs border border-blue-100"><GradientText colors={row.status === 'حل‌شده' ? ["#10b981", "#34d399", "#10b981"] : undefined}>{row.status}</GradientText></span></td><td className="p-4 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4 font-mono text-xs text-gray-400">{formatDate(row.created_at)}</td><td className="p-4 text-left"><button onClick={() => openModal('issue', row)} className="text-gray-400 hover:text-blue-600"><Edit size={16}/></button></td></tr>))}</tbody></table></div>)}
             </section>
           )}
           {activeTab === 'features' && (
@@ -763,11 +781,16 @@ export default function App() {
                         />
                         
                         <div className="space-y-1">
-                            <label className="text-xs font-bold text-gray-500">درصد پیشرفت ({formData.progress}%)</label>
-                            <input type="range" min="0" max="100" step="5" value={formData.progress || 0} onChange={(e) => setFormData({...formData, progress: e.target.value})} className="w-full accent-indigo-600 cursor-pointer"/>
+                            <label className="text-xs font-bold text-gray-500 dark:text-gray-300">درصد پیشرفت ({formData.progress}%)</label>
+                            <ElasticSlider 
+                                value={formData.progress || 0} 
+                                onChange={(val) => setFormData({...formData, progress: val})} 
+                                min={0} 
+                                max={100} 
+                            />
                         </div>
 
-                        <select value={formData.has_website || 'false'} onChange={(e) => setFormData({...formData, has_website: e.target.value})} className="border p-3 rounded-xl text-sm w-full"><option value="false">وبسایت ندارد</option><option value="true">وبسایت دارد</option></select>
+                        <select value={formData.has_website || 'false'} onChange={(e) => setFormData({...formData, has_website: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white"><option value="false">وبسایت ندارد</option><option value="true">وبسایت دارد</option></select>
 
                         {/* Section 1: Call */}
                         <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded-xl space-y-2 border dark:border-slate-600">
@@ -833,7 +856,7 @@ export default function App() {
                     /* Default Fields for other types */
                     <>
                         <div className="space-y-1">
-                            <label className="text-xs text-gray-500 font-medium">نام کاربری</label>
+                            <label className="text-xs text-gray-500 font-medium dark:text-gray-400">نام کاربری</label>
                             <UserSearchInput 
                                 value={formData.username || ''} 
                                 onChange={(val) => setFormData(prev => ({ ...prev, username: val }))} 
@@ -845,14 +868,14 @@ export default function App() {
                         {/* Date field for reports (not profile, not onboarding) */}
                         {modalType !== 'profile' && (
                              <div className="space-y-1">
-                                 <label className="text-xs text-gray-500 font-medium">تاریخ ثبت</label>
+                                 <label className="text-xs text-gray-500 font-medium dark:text-gray-400">تاریخ ثبت</label>
                                  <div className="w-full">
                                      <DatePicker 
                                         calendar={persian} 
                                         locale={persian_fa} 
                                         value={formData.date || new Date()} 
                                         onChange={(date) => setFormData({...formData, date: date})}
-                                        inputClass="w-full border p-3 rounded-xl text-sm outline-none focus:border-blue-500"
+                                        inputClass="w-full border p-3 rounded-xl text-sm outline-none focus:border-blue-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                                      />
                                  </div>
                              </div>
@@ -908,11 +931,11 @@ export default function App() {
                         {modalType === 'feature' && (
                             <>
                                 <div className="space-y-2">
-                                    <label className="text-xs text-gray-500 font-bold">وضعیت</label>
+                                    <label className="text-xs text-gray-500 font-bold dark:text-gray-400">وضعیت</label>
                                     <select value={formData.status || 'بررسی نشده'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white"><option value="بررسی نشده">بررسی نشده</option><option value="در تحلیل">در تحلیل</option><option value="در توسعه">در توسعه</option><option value="انجام شد">انجام شد</option></select>
                                 </div>
                                 <div className="space-y-2">
-                                     <label className="text-xs text-gray-500 font-bold">ثبت کننده (درخواست دهنده)</label>
+                                     <label className="text-xs text-gray-500 font-bold dark:text-gray-400">ثبت کننده (درخواست دهنده)</label>
                                      <input placeholder="نام ثبت کننده" value={loggedInUser} disabled className="border p-3 rounded-xl text-sm w-full bg-gray-100 dark:bg-slate-800 dark:border-slate-600 dark:text-gray-400 cursor-not-allowed" />
                                 </div>
                                 <div className="relative flex items-center gap-2">
@@ -930,7 +953,7 @@ export default function App() {
                         {modalType === 'meeting' && (
                             <div className="space-y-3">
                                 <div className="space-y-1">
-                                    <label className="text-xs text-gray-500 font-medium">تاریخ و زمان جلسه</label>
+                                    <label className="text-xs text-gray-500 font-medium dark:text-gray-400">تاریخ و زمان جلسه</label>
                                     <div className="flex gap-2">
                                         <div className="flex-1">
                                             <DatePicker 
@@ -938,29 +961,29 @@ export default function App() {
                                                 locale={persian_fa} 
                                                 value={formData.date || new Date()} 
                                                 onChange={(date) => setFormData({...formData, date: date})}
-                                                inputClass="w-full border p-3 rounded-xl text-sm outline-none focus:border-blue-500"
+                                                inputClass="w-full border p-3 rounded-xl text-sm outline-none focus:border-blue-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                                             />
                                         </div>
-                                        <input type="time" value={formData.meeting_time || ''} onChange={(e) => setFormData({...formData, meeting_time: e.target.value})} className="border p-3 rounded-xl text-sm w-24 outline-none focus:border-blue-500"/>
+                                        <input type="time" value={formData.meeting_time || ''} onChange={(e) => setFormData({...formData, meeting_time: e.target.value})} className="border p-3 rounded-xl text-sm w-24 outline-none focus:border-blue-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white"/>
                                     </div>
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs text-gray-500 font-medium">برگزار کننده</label>
+                                    <label className="text-xs text-gray-500 font-medium dark:text-gray-400">برگزار کننده</label>
                                     <select value={formData.created_by || loggedInUser} onChange={(e) => setFormData({...formData, created_by: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white">
                                         {ALLOWED_USERS.map(u => <option key={u} value={u}>{u}</option>)}
                                     </select>
                                 </div>
                                 <div className="relative">
-                                    <textarea rows="2" placeholder="علت جلسه..." value={formData.reason || ''} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
+                                    <textarea rows="2" placeholder="علت جلسه..." value={formData.reason || ''} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} className="w-full border p-3 rounded-xl text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
                                     <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, reason: (p.reason || '') + ' ' + text}))} /></div>
                                 </div>
                                 <div className="relative">
-                                    <textarea rows="2" placeholder="نتیجه جلسه..." value={formData.result || ''} onChange={(e) => setFormData({ ...formData, result: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
+                                    <textarea rows="2" placeholder="نتیجه جلسه..." value={formData.result || ''} onChange={(e) => setFormData({ ...formData, result: e.target.value })} className="w-full border p-3 rounded-xl text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
                                     <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, result: (p.result || '') + ' ' + text}))} /></div>
                                 </div>
                                 <div className="flex items-center gap-2 mt-2">
                                     <input type="checkbox" id="meeting_held" checked={formData.held || false} onChange={(e) => setFormData({...formData, held: e.target.checked})} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-gray-300"/>
-                                    <label htmlFor="meeting_held" className="text-sm text-gray-700 font-bold">جلسه برگزار شد</label>
+                                    <label htmlFor="meeting_held" className="text-sm text-gray-700 font-bold dark:text-gray-300">جلسه برگزار شد</label>
                                 </div>
                             </div>
                         )}
@@ -969,7 +992,7 @@ export default function App() {
                              <>
                                 <select value={formData.status || 'فریز'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white"><option value="فریز">فریز</option><option value="در حال رفع">در حال رفع</option><option value="رفع شد">رفع شد</option></select>
                                 <div className="relative">
-                                    <textarea rows="3" placeholder="توضیحات..." value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
+                                    <textarea rows="3" placeholder="توضیحات..." value={formData.desc_text || ''} onChange={(e) => setFormData({ ...formData, desc_text: e.target.value })} className="w-full border p-3 rounded-xl text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
                                     <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, desc_text: (p.desc_text || '') + ' ' + text}))} /></div>
                                 </div>
                              </>
@@ -979,7 +1002,7 @@ export default function App() {
                              <>
                                 <select value={formData.status || 'در بررسی'} onChange={(e) => setFormData({...formData, status: e.target.value})} className="border p-3 rounded-xl text-sm w-full dark:bg-slate-700 dark:border-slate-600 dark:text-white"><option value="بازپرداخت شد">بازپرداخت شد</option><option value="در بررسی">در بررسی</option><option value="رد شد">رد شد</option></select>
                                 <div className="relative">
-                                    <textarea rows="3" placeholder="توضیحات..." value={formData.reason || ''} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} className="w-full border p-3 rounded-xl text-sm" />
+                                    <textarea rows="3" placeholder="توضیحات..." value={formData.reason || ''} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} className="w-full border p-3 rounded-xl text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
                                     <div className="absolute left-2 bottom-2"><VoiceRecorder onTranscript={(text) => setFormData(p => ({...p, reason: (p.reason || '') + ' ' + text}))} /></div>
                                 </div>
                              </>
@@ -987,7 +1010,9 @@ export default function App() {
                     </>
                 )}
 
-                <button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-blue-500 text-white p-3 rounded-xl font-bold hover:shadow-lg mt-4 text-sm">ذخیره</button>
+                <ClickSpark className="w-full">
+                    <button type="submit" className="w-full bg-gradient-to-l from-blue-600 to-blue-500 text-white p-3 rounded-xl font-bold hover:shadow-lg mt-4 text-sm">ذخیره</button>
+                </ClickSpark>
             </form>
           </div>
         </div>

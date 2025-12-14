@@ -5,6 +5,8 @@ import { callVardastAI } from '../utils/vardast';
 import TimeFilter from './TimeFilter';
 import { filterDataByTime } from '../utils/helpers';
 import { getAnalysisPrompt } from '../utils/prompts';
+import Squares from './reactbits/Squares';
+import DecryptedText from './reactbits/DecryptedText';
 
 const AIAnalysisTab = ({ issues, onboardings, features, meetings }) => {
     const [loading, setLoading] = useState(false);
@@ -36,12 +38,14 @@ const AIAnalysisTab = ({ issues, onboardings, features, meetings }) => {
     };
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-6xl mx-auto">
-            <div className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-6xl mx-auto relative">
+            
+            <div className="space-y-6 relative z-10">
                 <div className="flex justify-end mb-2">
                     <TimeFilter value={timeFilter} onChange={setTimeFilter} customRange={customRange} onCustomChange={setCustomRange} />
                 </div>
                 <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-8 rounded-3xl text-white shadow-lg relative overflow-hidden">
+                    <Squares className="opacity-20" />
                     <div className="relative z-10">
                         <h2 className="text-2xl font-black mb-4 flex items-center gap-2"><Sparkles className="text-amber-300"/> تحلیل خودکار</h2>
                         <div className="flex gap-3 flex-wrap">
@@ -52,15 +56,21 @@ const AIAnalysisTab = ({ issues, onboardings, features, meetings }) => {
                         </div>
                     </div>
                 </div>
-                {analysisResult && <div className="bg-white p-6 rounded-3xl shadow-sm border prose prose-sm max-w-none dark:bg-slate-800 dark:border-slate-700 dark:text-gray-300">{analysisResult}</div>}
+                {analysisResult && (
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border prose prose-sm max-w-none dark:bg-slate-800 dark:border-slate-700 dark:text-gray-300">
+                        <DecryptedText text={analysisResult} speed={30} className="whitespace-pre-wrap" />
+                    </div>
+                )}
             </div>
-            <AIChatBox contextData={{ 
-                issues: filteredIssues.length, 
-                onboardings: filteredOnboardings.length, 
-                features: filteredFeatures?.length, 
-                meetings: filteredMeetings?.length,
-                sample_issues: filteredIssues.slice(0, 5) 
-            }} />
+            <div className="relative z-10">
+                <AIChatBox contextData={{ 
+                    issues: filteredIssues.length, 
+                    onboardings: filteredOnboardings.length, 
+                    features: filteredFeatures?.length, 
+                    meetings: filteredMeetings?.length,
+                    sample_issues: filteredIssues.slice(0, 5) 
+                }} />
+            </div>
         </div>
     );
 };
