@@ -4,6 +4,7 @@ import AIChatBox from './AIChatBox';
 import { callVardastAI } from '../utils/vardast';
 import TimeFilter from './TimeFilter';
 import { filterDataByTime } from '../utils/helpers';
+import { getAnalysisPrompt } from '../utils/prompts';
 
 const AIAnalysisTab = ({ issues, onboardings, features }) => {
     const [loading, setLoading] = useState(false);
@@ -25,7 +26,7 @@ const AIAnalysisTab = ({ issues, onboardings, features }) => {
         } else { 
             data = filteredIssues.map(i => ({ type: i.type, desc: i.desc_text })); 
         } 
-        const prompt = `Data: ${JSON.stringify(data)}`; 
+        const prompt = getAnalysisPrompt(data); 
         const res = await callVardastAI(prompt); 
         setAnalysisResult(res || 'Error'); 
         setLoading(false); 
