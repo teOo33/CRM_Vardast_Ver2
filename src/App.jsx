@@ -757,7 +757,7 @@ export default function App() {
                 )}
             </div>
           )}
-        </div>
+        </FadeContent>
       </main>
 
       {isModalOpen && (
