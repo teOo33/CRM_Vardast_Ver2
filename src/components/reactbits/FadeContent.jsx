@@ -1,3 +1,4 @@
+import React from 'react';
 import { motion } from 'framer-motion';
 
 const FadeContent = ({ children, blur = false, duration = 0.6, easing = "easeOut", initialOpacity = 0, className = "" }) => {
