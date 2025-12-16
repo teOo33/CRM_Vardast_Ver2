@@ -59,9 +59,9 @@ import {
 } from './utils/helpers';
 import { callVardastAI } from './utils/vardast';
 import { 
-  getChurnAnalysisPrompt, 
-  getFeatureTitlePrompt, 
-  getTechnicalIssueClassificationPrompt 
+  getChurnRiskAnalysisPrompt, 
+  getFeatureTitleGenerationPrompt, 
+  getTechnicalClassificationPrompt 
 } from './utils/prompts';
 
 // Constants
@@ -332,7 +332,11 @@ export default function App() {
   
   const handleAiChurnAnalysis = async (user) => { 
       setAiLoading(true); 
-      const prompt = getChurnAnalysisPrompt(user, filteredIssues, filteredFrozen, filteredRefunds);
+      // Aggregated data including ALL fields from Technical Reports, ALL fields from Refund Reports, and ALL fields from Freeze Reports, all filtered by the selected date range.
+      // NOTE: `filteredIssues` etc. are already filtered by the date range selected in the active tab (which is 'dashboard' or 'ai-analysis').
+      // When this is called from the dashboard (where the button is), `filteredIssues` uses `globalTimeFilter`.
+      
+      const prompt = getChurnRiskAnalysisPrompt(user, filteredIssues, filteredRefunds, filteredFrozen);
       const res = await callVardastAI(prompt); 
       setAiLoading(false); 
       if (res) alert(res); 
@@ -343,8 +347,11 @@ export default function App() {
   const handleGenerateFeatureTitle = async () => {
       if (!formData.desc_text) return alert('لطفا توضیحات را وارد کنید');
       setAiLoading(true);
-      const context = features.map(f => `Title: ${f.title}, Desc: ${f.desc_text}`).join('\n---\n');
-      const prompt = getFeatureTitlePrompt(context, formData.desc_text);
+      
+      // "Generate Feature Title" Button: Send only the Feature Title and Description fields from ALL feature request reports. Do NOT apply any date range filters (send entire history).
+      // So I use `features` (which is all data) instead of `filteredFeatures`.
+      const prompt = getFeatureTitleGenerationPrompt(features, formData.desc_text);
+      
       const res = await callVardastAI(prompt);
       setAiLoading(false);
       if (res) setFormData(prev => ({ ...prev, title: res }));
@@ -354,10 +361,10 @@ export default function App() {
       if (!formData.desc_text) return alert('لطفا توضیحات را وارد کنید');
       setAiLoading(true);
       
-      const modules = ['پرامپت', 'ویزارد', 'دایرکت هوشمند', 'کامنت هوشمند', 'اتصال تلگرام', 'اتصال اینستاگرام', 'اتصال وبسایت', 'نیمچت', 'گزارشات', 'UI/UX', 'خواندت محصولات از وبسایت', 'استوری‌های هوشمند', 'اکسس توکن منقضی شده', 'فالو اجباری', 'ویجت', 'سایر'];
-      const types = ['باگ فنی', 'خطای کاربر', 'کندی سیستم', 'محدودیت API', 'طراحی UX', 'خطای مشتری', 'سایر'];
-
-      const prompt = getTechnicalIssueClassificationPrompt(formData.desc_text, modules, types);
+      // "Get Technical Classification" Button: Send ONLY the Description field of the current form being filled out by the user (real-time input).
+      // This logic is handled inside getTechnicalClassificationPrompt
+      const prompt = getTechnicalClassificationPrompt(formData.desc_text);
+      
       const res = await callVardastAI(prompt, true);
       
       setAiLoading(false);
@@ -537,6 +544,22 @@ export default function App() {
   };
 
   useEffect(() => { setTabTimeFilter(null); setTabCustomRange(null); }, [activeTab]);
+
+  // Compute Churn List for ALL users (without time filter, or maybe I should use the filtered one? Instructions say "complete dataset")
+  // "General AI ChatBot: Send the complete dataset including ALL information from ALL tabs (Technical Issues, Onboarding, Feature Requests, Refunds, Freeze, Meetings, and Churn List)."
+  // Since "Churn List" in the dashboard is derived from `filteredIssues` (based on > 3 issues in the filtered timeframe),
+  // if I want the "complete dataset", I should probably derive it from the full `issues` list for the Chatbot.
+  
+  const allChurnRisks = useMemo(() => { 
+      const userCounts = {}; 
+      issues.forEach(i => { 
+          if (!userCounts[i.username]) userCounts[i.username] = { count: 0, issues: [] }; 
+          userCounts[i.username].count += 1; 
+          userCounts[i.username].issues.push({ desc: i.desc_text, status: i.status }); 
+      }); 
+      return Object.entries(userCounts).filter(([_, data]) => data.count > 3).map(([username, data]) => ({ username, count: data.count, issues: data.issues })); 
+  }, [issues]);
+
   
   if (!isAuthed) {
     return (
@@ -701,7 +724,8 @@ export default function App() {
             </section>
           )}
           {activeTab === 'users' && (profileSearch ? <UserProfile usersData={allUsers} issues={issues} frozen={frozen} features={features} refunds={refunds} onboardings={onboardings} meetings={meetings} openModal={openModal} profileSearch={profileSearch} setProfileSearch={setProfileSearch} /> : <UsersTab users={allUsers} navigateToProfile={navigateToProfile} />)}
-          {activeTab === 'ai-analysis' && <AIAnalysisTab issues={filteredIssues} onboardings={filteredOnboardings} features={filteredFeatures} meetings={filteredMeetings} navigateToProfile={navigateToProfile} />}
+          {/* Passed unfiltered data to AIAnalysisTab to ensure General ChatBot gets complete dataset */}
+          {activeTab === 'ai-analysis' && <AIAnalysisTab issues={issues} onboardings={onboardings} features={features} meetings={meetings} refunds={refunds} frozen={frozen} churnList={allChurnRisks} navigateToProfile={navigateToProfile} />}
           {activeTab === 'frozen' && (
              <div className="h-full flex flex-col">
               <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-2xl border shadow-sm">

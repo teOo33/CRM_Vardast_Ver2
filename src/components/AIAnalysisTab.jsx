@@ -4,14 +4,20 @@ import AIChatBox from './AIChatBox';
 import { callVardastAI } from '../utils/vardast';
 import TimeFilter from './TimeFilter';
 import { filterDataByTime } from '../utils/helpers';
-import { getAnalysisPrompt } from '../utils/prompts';
+import { 
+    getTechnicalAnalysisPrompt,
+    getOnboardingAnalysisPrompt,
+    getFeatureAnalysisPrompt,
+    getMeetingAnalysisPrompt
+} from '../utils/prompts';
 
-const AIAnalysisTab = ({ issues, onboardings, features, meetings }) => {
+const AIAnalysisTab = ({ issues, onboardings, features, meetings, refunds, frozen, churnList }) => {
     const [loading, setLoading] = useState(false);
     const [analysisResult, setAnalysisResult] = useState('');
     const [timeFilter, setTimeFilter] = useState('30d');
     const [customRange, setCustomRange] = useState(null);
 
+    // Apply time filter as requested by instructions (Technical Problem Analysis, Onboarding Analysis, Feature Request Analysis, Report/Meeting Analysis)
     const filteredIssues = useMemo(() => filterDataByTime(issues, timeFilter, customRange), [issues, timeFilter, customRange]);
     const filteredOnboardings = useMemo(() => filterDataByTime(onboardings, timeFilter, customRange), [onboardings, timeFilter, customRange]);
     const filteredFeatures = useMemo(() => filterDataByTime(features, timeFilter, customRange), [features, timeFilter, customRange]);
@@ -19,17 +25,23 @@ const AIAnalysisTab = ({ issues, onboardings, features, meetings }) => {
 
     const handleAnalysis = async (type) => { 
         setLoading(true); 
-        let data = []; 
+        let prompt = '';
+        
         if (type === 'onboarding') { 
-            data = filteredOnboardings;
+            // Send ALL fields from ALL onboarding reports, filtered by the selected date range.
+            prompt = getOnboardingAnalysisPrompt(filteredOnboardings);
         } else if (type === 'features') { 
-            data = filteredFeatures;
+            // Send ALL fields from ALL feature request reports, filtered by the selected date range.
+            prompt = getFeatureAnalysisPrompt(filteredFeatures);
         } else if (type === 'meetings') {
-            data = filteredMeetings;
+            // Send ALL fields from ALL meeting reports, filtered by the selected date range.
+            prompt = getMeetingAnalysisPrompt(filteredMeetings);
         } else { 
-            data = filteredIssues;
+            // 'general' -> Technical Problem Analysis
+            // Send ALL fields from ALL technical issue reports (including priority flags and technical team review status), filtered by the user's selected date range.
+            prompt = getTechnicalAnalysisPrompt(filteredIssues);
         } 
-        const prompt = getAnalysisPrompt(type, data); 
+        
         const res = await callVardastAI(prompt); 
         setAnalysisResult(res || 'Error'); 
         setLoading(false); 
@@ -52,14 +64,16 @@ const AIAnalysisTab = ({ issues, onboardings, features, meetings }) => {
                         </div>
                     </div>
                 </div>
-                {analysisResult && <div className="bg-white p-6 rounded-3xl shadow-sm border prose prose-sm max-w-none dark:bg-slate-800 dark:border-slate-700 dark:text-gray-300">{analysisResult}</div>}
+                {analysisResult && <div className="bg-white p-6 rounded-3xl shadow-sm border prose prose-sm max-w-none dark:bg-slate-800 dark:border-slate-700 dark:text-gray-300 whitespace-pre-wrap">{analysisResult}</div>}
             </div>
             <AIChatBox contextData={{ 
-                issues: filteredIssues.length, 
-                onboardings: filteredOnboardings.length, 
-                features: filteredFeatures?.length, 
-                meetings: filteredMeetings?.length,
-                sample_issues: filteredIssues.slice(0, 5) 
+                issues, 
+                onboardings, 
+                features, 
+                meetings,
+                refunds, 
+                frozen, 
+                churnList
             }} />
         </div>
     );

@@ -1,60 +1,60 @@
-export const getChurnAnalysisPrompt = (user, issues, frozen, refunds) => {
-    // Filter records for this specific user
-    const userIssues = issues.filter(i => i.username === user.username);
-    const userFrozen = frozen.filter(f => f.username === user.username);
-    const userRefunds = refunds.filter(r => r.username === user.username);
+export const getTechnicalAnalysisPrompt = (data) => {
+    return `follow ### Technical problem analysis instructions
 
-    return `
-    User: ${user.username}
-    
-    Technical Issues:
-    ${JSON.stringify(userIssues)}
-    
-    Frozen Reports:
-    ${JSON.stringify(userFrozen)}
-    
-    Refund Requests:
-    ${JSON.stringify(userRefunds)}
-    
-    Task: Analyze the churn risk for this user based on the provided history.
-    `;
+Data: ${JSON.stringify(data)}`;
 };
 
-export const getFeatureTitlePrompt = (context, description) => `
-Context (Existing Features):
-${context}
+export const getOnboardingAnalysisPrompt = (data) => {
+    return `follow ### Onboarding Analysis Guidelines
 
-New Feature Description: "${description}"
-
-Task: Generate a short, concise Persian title for this new feature based on its description. Return ONLY the title.
-`;
-
-export const getAnalysisPrompt = (type, data) => {
-    let typeName = '';
-    switch(type) {
-        case 'general': typeName = 'Technical Issues'; break;
-        case 'onboarding': typeName = 'Onboarding Reports'; break;
-        case 'features': typeName = 'Feature Requests'; break;
-        case 'meetings': typeName = 'Meeting Reports'; break;
-        default: typeName = 'Data';
-    }
-    return `
-    Data Type: ${typeName}
-    Data: ${JSON.stringify(data)}
-    
-    Task: Analyze the provided data and provide insights, trends, and summary in Persian.
-    `;
+Data: ${JSON.stringify(data)}`;
 };
 
-export const getChatPrompt = (contextData, question) => `Context: ${JSON.stringify(contextData)}\n\nQuestion: ${question}`;
+export const getFeatureAnalysisPrompt = (data) => {
+    return `follow ### Feature Request Analysis Guidelines
 
-export const getTechnicalIssueClassificationPrompt = (description, modules, types) => `
-Description: "${description}"
+Data: ${JSON.stringify(data)}`;
+};
 
-Available Modules: ${modules.join(', ')}
-Available Types: ${types.join(', ')}
+export const getMeetingAnalysisPrompt = (data) => {
+    return `follow ### Report Analysis Instructions
 
-Task: Analyze the description and categorize it into one of the Available Modules and one of the Available Types.
-Return ONLY a JSON object with keys "module" and "type".
-Example: {"module": "UI/UX", "type": "باگ فنی"}
-`;
+Data: ${JSON.stringify(data)}`;
+};
+
+export const getChurnRiskAnalysisPrompt = (user, issues, refunds, frozen) => {
+    const data = {
+        target_user: user,
+        technical_issues: issues,
+        refund_reports: refunds,
+        freeze_reports: frozen
+    };
+    return `follow ### Chern Risk Analysis Guidelines
+
+Data: ${JSON.stringify(data)}`;
+};
+
+export const getFeatureTitleGenerationPrompt = (features, description) => {
+    // Send only the Feature Title and Description fields from ALL feature request reports.
+    const simplifiedFeatures = features.map(f => ({ title: f.title, description: f.desc_text }));
+    
+    return `follow ### Feature Title Generation Guidelines
+
+Existing Features: ${JSON.stringify(simplifiedFeatures)}
+
+New Feature Description: "${description}"`;
+};
+
+export const getTechnicalClassificationPrompt = (description) => {
+    return `follow ### Get classification of technical issues
+
+Description: "${description}"`;
+};
+
+export const getGeneralChatbotPrompt = (allData, question) => {
+    return `follow ### AI ChatBot
+
+Context: ${JSON.stringify(allData)}
+
+User Message: ${question}`;
+};
