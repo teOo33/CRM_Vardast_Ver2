@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, Send } from 'lucide-react';
 import { callVardastAI } from '../utils/vardast';
+import { getChatPrompt } from '../utils/prompts';
 
 const AIChatBox = ({ contextData }) => {
     const [messages, setMessages] = useState([]);
@@ -8,7 +9,7 @@ const AIChatBox = ({ contextData }) => {
     const [loading, setLoading] = useState(false);
     const scrollRef = useRef(null);
     useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
-    const handleSend = async () => { if (!input.trim()) return; const userMsg = { role: 'user', text: input }; setMessages(prev => [...prev, userMsg]); setInput(''); setLoading(true); const prompt = `Context: ${JSON.stringify(contextData)}\n\nQuestion: ${userMsg.text}`; const res = await callVardastAI(prompt); setMessages(prev => [...prev, { role: 'ai', text: res || 'Error fetching response' }]); setLoading(false); };
+    const handleSend = async () => { if (!input.trim()) return; const userMsg = { role: 'user', text: input }; setMessages(prev => [...prev, userMsg]); setInput(''); setLoading(true); const prompt = getChatPrompt(contextData, userMsg.text); const res = await callVardastAI(prompt); setMessages(prev => [...prev, { role: 'ai', text: res || 'Error fetching response' }]); setLoading(false); };
     return (
         <div className="flex flex-col h-[500px] bg-white rounded-3xl shadow-lg border overflow-hidden">
             <div className="bg-slate-50 p-4 border-b font-bold text-gray-700 flex items-center gap-2"><MessageSquare size={18} className="text-purple-600"/> چت با دستیار هوشمند</div>
