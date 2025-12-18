@@ -64,7 +64,7 @@ const AIAnalysisTab = ({ issues, onboardings, features, meetings, refunds, froze
                         </div>
                     </div>
                 </div>
-                {analysisResult && <div className="bg-white p-6 rounded-3xl shadow-sm border prose prose-sm max-w-none dark:bg-slate-800 dark:border-slate-700 dark:text-gray-300">{analysisResult}</div>}
+                {analysisResult && <div className="bg-white p-6 rounded-3xl shadow-sm border prose prose-sm max-w-none dark:bg-slate-800 dark:border-slate-700 dark:text-gray-300 whitespace-pre-wrap">{analysisResult}</div>}
             </div>
             <AIChatBox contextData={{ 
                 issues, 
