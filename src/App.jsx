@@ -34,7 +34,9 @@ import {
   LogOut,
   BrainCircuit,
   History,
-  Edit
+  Edit,
+  Download,
+  Home
 } from 'lucide-react';
 
 import {
@@ -49,13 +51,15 @@ import {
 
 // Hooks
 import { useTailwind } from './hooks/useTailwind';
+import { useToast } from './components/ui/Toast';
 
 // Utils
 import { 
   formatDate, 
   parsePersianDate, 
   normalizeDate, 
-  filterDataByTime 
+  filterDataByTime,
+  downloadCSV
 } from './utils/helpers';
 import { callVardastAI } from './utils/vardast';
 import { 
@@ -87,6 +91,11 @@ import AIAnalysisTab from './components/AIAnalysisTab';
 import CohortChart from './components/CohortChart';
 import UserProfile from './components/UserProfile';
 import UsersTab from './components/UsersTab';
+import Breadcrumbs from './components/ui/Breadcrumbs';
+import BackButton from './components/ui/BackButton';
+import Skeleton from './components/ui/Skeleton';
+import BentoGrid, { BentoItem } from './components/ui/BentoGrid';
+
 import logo from './assets/logo.png';
 
 let supabase;
@@ -100,6 +109,7 @@ try {
 
 export default function App() {
   useTailwind();
+  const toast = useToast();
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
@@ -273,6 +283,7 @@ export default function App() {
       localStorage.setItem('vardast_ops_authed', '1');
       localStorage.setItem('vardast_ops_user', user);
       setLoginError('');
+      toast.success(`خوش آمدید ${user}`);
   };
 
   const handleLogout = () => {
@@ -283,12 +294,50 @@ export default function App() {
     setLoginStep('username');
     setLoginUsername('');
     setLoginPassword('');
+    toast.info('با موفقیت خارج شدید');
   };
 
   const navigateToProfile = (username) => {
     setProfileSearch(username);
     setActiveTab('users');
     if (window.innerWidth < 768) setSidebarOpen(false);
+  };
+
+  const handleBack = () => {
+    if (profileSearch) {
+      setProfileSearch(''); // Go back to Users list
+      return;
+    }
+    if (activeTab !== 'dashboard') {
+      setActiveTab('dashboard'); // Go back to Dashboard
+      return;
+    }
+  };
+
+  const getBreadcrumbs = () => {
+    const items = [
+      { label: 'خانه', icon: Home, onClick: () => { setActiveTab('dashboard'); setProfileSearch(''); } }
+    ];
+
+    if (activeTab !== 'dashboard') {
+      const tabLabels = {
+        'users': 'کاربران',
+        'issues': 'مشکلات فنی',
+        'features': 'درخواست فیچر',
+        'frozen': 'فریز ها',
+        'refunds': 'بازگشت وجه',
+        'onboarding': 'آنبوردینگ',
+        'ai-analysis': 'تحلیل هوشمند',
+        'meetings': 'جلسات تیم',
+      };
+      items.push({ label: tabLabels[activeTab] || activeTab, onClick: () => { if (activeTab === 'users') setProfileSearch(''); } });
+    }
+
+    if (activeTab === 'users' && profileSearch) {
+      items.push({ label: profileSearch });
+    }
+
+    return items;
   };
 
   useEffect(() => {
@@ -332,41 +381,31 @@ export default function App() {
   
   const handleAiChurnAnalysis = async (user) => { 
       setAiLoading(true); 
-      // Aggregated data including ALL fields from Technical Reports, ALL fields from Refund Reports, and ALL fields from Freeze Reports, all filtered by the selected date range.
-      // NOTE: `filteredIssues` etc. are already filtered by the date range selected in the active tab (which is 'dashboard' or 'ai-analysis').
-      // When this is called from the dashboard (where the button is), `filteredIssues` uses `globalTimeFilter`.
-      
       const prompt = getChurnRiskAnalysisPrompt(user, filteredIssues, filteredRefunds, filteredFrozen);
       const res = await callVardastAI(prompt); 
       setAiLoading(false); 
-      if (res) alert(res); 
+      if (res) toast.success(res, { duration: 10000 }); 
   };
   
   const chartData = useMemo(() => { const acc = {}; filteredIssues.forEach((i) => { const date = normalizeDate(i); const d = date ? format(date, 'yyyy-MM-dd') : 'نامشخص'; acc[d] = (acc[d] || 0) + 1; }); return Object.keys(acc).map((d) => ({ date: d, count: acc[d] })).sort((a,b) => a.date.localeCompare(b.date)); }, [filteredIssues]);
 
   const handleGenerateFeatureTitle = async () => {
-      if (!formData.desc_text) return alert('لطفا توضیحات را وارد کنید');
+      if (!formData.desc_text) return toast.error('لطفا توضیحات را وارد کنید');
       setAiLoading(true);
-      
-      // "Generate Feature Title" Button: Send only the Feature Title and Description fields from ALL feature request reports. Do NOT apply any date range filters (send entire history).
-      // So I use `features` (which is all data) instead of `filteredFeatures`.
       const prompt = getFeatureTitleGenerationPrompt(features, formData.desc_text);
-      
       const res = await callVardastAI(prompt);
       setAiLoading(false);
-      if (res) setFormData(prev => ({ ...prev, title: res }));
+      if (res) {
+        setFormData(prev => ({ ...prev, title: res }));
+        toast.success('عنوان با موفقیت تولید شد');
+      }
   };
 
   const handleAutoFillIssueFields = async () => {
-      if (!formData.desc_text) return alert('لطفا توضیحات را وارد کنید');
+      if (!formData.desc_text) return toast.error('لطفا توضیحات را وارد کنید');
       setAiLoading(true);
-      
-      // "Get Technical Classification" Button: Send ONLY the Description field of the current form being filled out by the user (real-time input).
-      // This logic is handled inside getTechnicalClassificationPrompt
       const prompt = getTechnicalClassificationPrompt(formData.desc_text);
-      
       const res = await callVardastAI(prompt, true);
-      
       setAiLoading(false);
       
       if (res) {
@@ -374,10 +413,11 @@ export default function App() {
               const json = JSON.parse(res);
               if (json.module && json.type) {
                   setFormData(prev => ({ ...prev, module: json.module, type: json.type }));
+                  toast.success('دسته‌بندی خودکار انجام شد');
               }
           } catch (e) {
               console.error("Failed to parse AI response", res);
-              alert("خطا در تحلیل هوشمند");
+              toast.error("خطا در تحلیل هوشمند");
           }
       }
   };
@@ -397,7 +437,6 @@ export default function App() {
     const commonFields = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, flag: formData.flag || null };
     let payload = {};
 
-    // Determine Table and Payload
     if (modalType === 'issue') {
       table = 'issues';
       payload = { ...commonFields, desc_text: formData.desc_text, module: formData.module, type: formData.type, status: formData.status || 'باز', support: formData.support, subscription_status: formData.subscription_status, resolved_at: formData.resolved_at, technical_note: formData.technical_note, technical_review: formData.technical_review, created_at: createdTimestamp };
@@ -416,7 +455,6 @@ export default function App() {
     } else if (modalType === 'meeting') {
         table = 'meetings';
         payload = { username: formData.username, date: createdTimestamp, meeting_time: formData.meeting_time, reason: formData.reason, result: formData.result, held: formData.held === true || formData.held === 'true', created_by: formData.created_by || loggedInUser };
-        // date update is handled by `date: createdTimestamp`
     } else if (modalType === 'onboarding') {
       table = 'onboardings';
       payload = { username: formData.username, phone_number: formData.phone_number, instagram_username: formData.instagram_username, telegram_id: formData.telegram_id, has_website: formData.has_website === 'true' || formData.has_website === true, progress: Number(formData.progress), initial_call_status: formData.initial_call_status, conversation_summary: formData.conversation_summary, call_date: formData.call_date, meeting_date: formData.meeting_date, meeting_note: formData.meeting_note, followup_date: formData.followup_date, followup_note: formData.followup_note, created_at: createdTimestamp };
@@ -446,7 +484,9 @@ export default function App() {
     }
 
     if (!supabase) {
-        setIsModalOpen(false); setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); return;
+        setIsModalOpen(false); setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); 
+        toast.success('ذخیره شد (حالت آفلاین)');
+        return;
     }
     
     // Audit Logic
@@ -497,8 +537,11 @@ export default function App() {
       const res = await supabase.from(table).insert([payload]);
       error = res.error;
     }
-    if (error) alert('خطا: ' + error.message);
-    else { setIsModalOpen(false); setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); }
+    if (error) toast.error('خطا: ' + error.message);
+    else { 
+        setIsModalOpen(false); setEditingId(null); setFormData({ ...INITIAL_FORM_DATA }); 
+        toast.success(isEdit ? 'ویرایش با موفقیت انجام شد' : 'با موفقیت ثبت شد');
+    }
   };
 
   const handleStatusChange = async (id, newStatus, table) => {
@@ -524,11 +567,14 @@ export default function App() {
 
     const { error } = await supabase.from(table).update(payload).eq('id', id);
     if (!error) {
+      toast.success('وضعیت بروزرسانی شد');
       if (table === 'issues') { setIssues(prev => prev.map(i => i.id.toString() === id ? { ...i, ...payload } : i)); } 
       else if (table === 'features') { setFeatures(prev => prev.map(f => f.id.toString() === id ? { ...f, ...payload } : f)); }
       else if (table === 'onboardings') { setOnboardings(prev => prev.map(o => o.id.toString() === id ? { ...o, ...payload } : o)); }
       else if (table === 'refunds') { setRefunds(prev => prev.map(r => r.id.toString() === id ? { ...r, ...payload } : r)); }
       else if (table === 'frozen') { setFrozen(prev => prev.map(f => f.id.toString() === id ? { ...f, ...payload } : f)); }
+    } else {
+      toast.error('خطا در بروزرسانی وضعیت');
     }
   };
 
@@ -545,11 +591,6 @@ export default function App() {
 
   useEffect(() => { setTabTimeFilter(null); setTabCustomRange(null); }, [activeTab]);
 
-  // Compute Churn List for ALL users (without time filter, or maybe I should use the filtered one? Instructions say "complete dataset")
-  // "General AI ChatBot: Send the complete dataset including ALL information from ALL tabs (Technical Issues, Onboarding, Feature Requests, Refunds, Freeze, Meetings, and Churn List)."
-  // Since "Churn List" in the dashboard is derived from `filteredIssues` (based on > 3 issues in the filtered timeframe),
-  // if I want the "complete dataset", I should probably derive it from the full `issues` list for the Chatbot.
-  
   const allChurnRisks = useMemo(() => { 
       const userCounts = {}; 
       issues.forEach(i => { 
@@ -626,41 +667,47 @@ export default function App() {
 
       <main className="flex-1 h-full overflow-y-auto overflow-x-hidden">
         <div className="px-4 sm:px-8 py-6 min-h-full">
-          <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
+          <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-4">
             <div className="flex items-center gap-3">
               <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 bg-white dark:bg-slate-800 dark:text-white dark:border-slate-700 border rounded-xl shadow-sm text-gray-600"><Menu size={20} /></button>
+              {activeTab !== 'dashboard' && <BackButton onClick={handleBack} />}
               <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800 dark:text-white">داشبورد پشتیبانی</h1>
-              {loggedInUser && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-lg">کاربر: {loggedInUser}</span>}
+              {loggedInUser && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-lg hidden sm:inline-block">کاربر: {loggedInUser}</span>}
             </div>
             {activeTab === 'dashboard' && (<TimeFilter value={globalTimeFilter} onChange={setGlobalTimeFilter} customRange={globalCustomRange} onCustomChange={setGlobalCustomRange} />)}
             {['issues', 'frozen', 'features', 'refunds', 'onboarding', 'meetings'].includes(activeTab) && (<TimeFilter value={tabTimeFilter} onChange={setTabTimeFilter} customRange={tabCustomRange} onCustomChange={setTabCustomRange} />)}
           </header>
 
+          <div className="mb-6">
+            <Breadcrumbs items={getBreadcrumbs()} />
+          </div>
+
           {activeTab === 'dashboard' && (
             <section className="space-y-6">
-              <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+              <BentoGrid className="grid-cols-2 lg:grid-cols-4">
                 {[{ title: 'نرخ حل مشکلات', value: `%${analytics.solvedRatio}`, color: 'from-emerald-500 to-teal-400', icon: CheckCircle2 }, { title: 'اکانت‌های فریز', value: analytics.activeFrozen, color: 'from-blue-500 to-indigo-400', icon: Snowflake }, { title: 'آنبوردینگ', value: filteredOnboardings.length, color: 'from-amber-500 to-orange-400', icon: GraduationCap }, { title: 'کل تیکت‌ها', value: filteredIssues.length, color: 'from-slate-700 to-slate-500', icon: Activity }].map((card, idx) => (
-                  <div key={idx} className="bg-white/70 dark:bg-slate-800/70 dark:border-slate-700 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col justify-between h-32 relative overflow-hidden group hover:shadow-md transition liquid-glass">
-                    <div className={`absolute -right-6 -top-6 p-4 rounded-full bg-gradient-to-br ${card.color} opacity-10 scale-150`}><card.icon size={50} /></div>
+                  <BentoItem key={idx} className="h-32 group overflow-hidden relative">
+                    <div className={`absolute -right-6 -top-6 p-4 rounded-full bg-gradient-to-br ${card.color} opacity-10 scale-150 group-hover:scale-175 transition-transform duration-500`}><card.icon size={50} /></div>
                     <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 z-10">{card.title}</span>
                     <h3 className="text-3xl font-black text-slate-800 dark:text-white z-10">{card.value}</h3>
-                  </div>
+                  </BentoItem>
                 ))}
-              </div>
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                <div className="xl:col-span-1 flex flex-col gap-6">
-                    <div className="bg-white/70 dark:bg-slate-800/70 dark:border-slate-700 backdrop-blur p-5 rounded-2xl shadow-sm border border-orange-100 flex flex-col h-64 liquid-glass">
-                        <h4 className="font-bold text-gray-700 dark:text-gray-200 text-sm mb-4 flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center"><Bell size={14}/></span>پیگیری‌های مورد نیاز (۷-۱۲ روز)</h4>
-                        <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
-                            {followUpList.length === 0 ? (<div className="h-full flex flex-col items-center justify-center text-gray-400"><CheckCircle2 size={32} className="text-emerald-500 mb-2" /><span className="text-xs">هیچ پیگیری نیاز نیست!</span></div>) : followUpList.map((item, idx) => (
-                                <div key={idx} className="bg-white dark:bg-slate-700 border border-orange-50 dark:border-slate-600 p-3 rounded-xl shadow-sm flex justify-between items-center group">
-                                    <div className="flex items-center gap-2"><UserAvatar name={item.username} size="sm"/><div className="flex flex-col"><span className="font-bold text-sm text-gray-800 dark:text-white cursor-pointer hover:text-blue-400" onClick={() => navigateToProfile(item.username)}>{item.username}</span><span className="text-[10px] text-gray-400 line-clamp-1 max-w-[150px]">{item.lastDate ? formatDate(item.lastDate) : ''}: {item.issue?.desc_text}</span></div></div>
-                                    <button onClick={() => handleDismissFollowUp(item.username)} className="text-gray-300 hover:text-emerald-500 transition" title="انجام شد/رد کردن"><CheckCircle2 size={18}/></button>
-                                </div>
-                            ))}
-                        </div>
+              </BentoGrid>
+              
+              <BentoGrid className="lg:grid-cols-3">
+                <BentoItem className="h-96 lg:col-span-1 border-orange-100">
+                    <h4 className="font-bold text-gray-700 dark:text-gray-200 text-sm mb-4 flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center"><Bell size={14}/></span>پیگیری‌های مورد نیاز (۷-۱۲ روز)</h4>
+                    <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
+                        {followUpList.length === 0 ? (<div className="h-full flex flex-col items-center justify-center text-gray-400"><CheckCircle2 size={32} className="text-emerald-500 mb-2" /><span className="text-xs">هیچ پیگیری نیاز نیست!</span></div>) : followUpList.map((item, idx) => (
+                            <div key={idx} className="bg-white dark:bg-slate-700 border border-orange-50 dark:border-slate-600 p-3 rounded-xl shadow-sm flex justify-between items-center group">
+                                <div className="flex items-center gap-2"><UserAvatar name={item.username} size="sm"/><div className="flex flex-col"><span className="font-bold text-sm text-gray-800 dark:text-white cursor-pointer hover:text-blue-400" onClick={() => navigateToProfile(item.username)}>{item.username}</span><span className="text-[10px] text-gray-400 line-clamp-1 max-w-[150px]">{item.lastDate ? formatDate(item.lastDate) : ''}: {item.issue?.desc_text}</span></div></div>
+                                <button onClick={() => handleDismissFollowUp(item.username)} className="text-gray-300 hover:text-emerald-500 transition" title="انجام شد/رد کردن"><CheckCircle2 size={18}/></button>
+                            </div>
+                        ))}
                     </div>
-                    <div className="bg-white/70 dark:bg-slate-800/70 dark:border-slate-700 backdrop-blur p-5 rounded-2xl shadow-sm border border-red-100 flex flex-col h-64 liquid-glass">
+                </BentoItem>
+                
+                <BentoItem className="h-96 lg:col-span-1 border-red-100">
                     <h4 className="font-bold text-gray-700 dark:text-gray-200 text-sm mb-4 flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-red-100 text-red-500 flex items-center justify-center"><AlertCircle size={14}/></span>ریسک ریزش</h4>
                     <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                         {churnRisks.length === 0 ? (<div className="h-full flex flex-col items-center justify-center text-gray-400"><CheckCircle2 size={40} className="text-emerald-500 mb-2" /><span className="text-xs">هیچ کاربری در خطر نیست!</span></div>) : churnRisks.map((user, idx) => (
@@ -670,19 +717,18 @@ export default function App() {
                         </div>
                         ))}
                     </div>
-                    </div>
-                </div>
-                <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 h-80">
-                   <div className="bg-white/70 dark:bg-slate-800/70 dark:border-slate-700 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col cursor-pointer hover:border-blue-200 transition liquid-glass" onClick={() => setExpandedChart('trend')}>
+                </BentoItem>
+
+                 <BentoItem className="h-96 lg:col-span-1 cursor-pointer hover:border-blue-200" onClick={() => setExpandedChart('trend')}>
                       <h4 className="font-bold text-gray-700 dark:text-gray-200 text-sm mb-4 flex items-center gap-2 justify-between"><span className="flex items-center gap-2"><TrendingUp size={16} className="text-blue-500"/>روند ثبت مشکلات</span><Maximize2 size={14} className="text-gray-400"/></h4>
                       <div className="flex-1 w-full pointer-events-none"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><defs><linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="date" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} /><Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: '11px'}} /><Area type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={2} fill="url(#colorCount)" /></AreaChart></ResponsiveContainer></div>
-                   </div>
-                   <div className="bg-white/70 dark:bg-slate-800/70 dark:border-slate-700 backdrop-blur p-5 rounded-2xl shadow-sm border border-white flex flex-col cursor-pointer hover:border-green-200 transition liquid-glass" onClick={() => setExpandedChart('cohort')}>
+                 </BentoItem>
+                 
+                 <BentoItem className="h-96 lg:col-span-3 cursor-pointer hover:border-green-200" onClick={() => setExpandedChart('cohort')}>
                       <h4 className="font-bold text-gray-700 dark:text-gray-200 text-sm mb-4 flex items-center justify-between"><span>نرخ فعال‌سازی کاربران</span><Maximize2 size={14} className="text-gray-400"/></h4>
                       <div className="flex-1 w-full pointer-events-none"><CohortChart onboardings={filteredOnboardings} /></div>
-                   </div>
-                </div>
-              </div>
+                 </BentoItem>
+              </BentoGrid>
             </section>
           )}
 
@@ -700,8 +746,26 @@ export default function App() {
           </ChartModal>
           <ChartModal isOpen={expandedChart === 'cohort'} onClose={() => setExpandedChart(null)} title="نرخ فعال‌سازی کاربران"><CohortChart onboardings={filteredOnboardings} /></ChartModal>
           <HistoryLogModal isOpen={!!historyModalData} onClose={() => setHistoryModalData(null)} history={historyModalData} />
-          {activeTab === 'onboarding' && <OnboardingTab onboardings={filteredOnboardings} openModal={openModal} navigateToProfile={navigateToProfile} setHistoryModalData={setHistoryModalData} onStatusChange={(id, status) => handleStatusChange(id, status, 'onboardings')} />}
-          {activeTab === 'meetings' && <MeetingsTab meetings={filteredMeetings} openModal={openModal} navigateToProfile={navigateToProfile} />}
+          {activeTab === 'onboarding' && (
+             <div className="flex flex-col h-full">
+                <div className="flex justify-end mb-4">
+                  <button onClick={() => downloadCSV(filteredOnboardings, 'onboarding-report')} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow hover:bg-green-700 transition">
+                      <Download size={16}/> دانلود گزارش
+                  </button>
+                </div>
+                <OnboardingTab onboardings={filteredOnboardings} openModal={openModal} navigateToProfile={navigateToProfile} setHistoryModalData={setHistoryModalData} onStatusChange={(id, status) => handleStatusChange(id, status, 'onboardings')} />
+             </div>
+          )}
+          {activeTab === 'meetings' && (
+             <div className="flex flex-col h-full">
+                <div className="flex justify-end mb-4">
+                  <button onClick={() => downloadCSV(filteredMeetings, 'meetings-report')} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow hover:bg-green-700 transition">
+                      <Download size={16}/> دانلود گزارش
+                  </button>
+                </div>
+                <MeetingsTab meetings={filteredMeetings} openModal={openModal} navigateToProfile={navigateToProfile} />
+             </div>
+          )}
           {activeTab === 'issues' && (
             <section className="h-full flex flex-col">
               <div className="flex flex-col md:flex-row justify-between items-center mb-4 bg-white p-3 rounded-2xl border shadow-sm gap-3">
@@ -709,18 +773,25 @@ export default function App() {
                     <div className="flex gap-2 bg-slate-100 p-1 rounded-xl"><button onClick={() => setIssueViewMode('table')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${issueViewMode === 'table' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><List size={16}/> جدول</button><button onClick={() => setIssueViewMode('kanban')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${issueViewMode === 'kanban' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><Columns size={16}/> کانبان</button></div>
                     <FlagFilter selectedFlags={flagFilter} onChange={setFlagFilter} />
                 </div>
-                <button onClick={() => openModal('issue')} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-200 flex items-center gap-2"><Plus size={16}/> ثبت مشکل</button>
+                <div className="flex gap-2">
+                    <button onClick={() => downloadCSV(filteredIssues, 'issues-report')} className="bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-green-200 flex items-center gap-2 hover:bg-green-700 transition"><Download size={16}/> CSV</button>
+                    <button onClick={() => openModal('issue')} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-200 flex items-center gap-2"><Plus size={16}/> ثبت مشکل</button>
+                </div>
               </div>
-              {issueViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredIssues} onStatusChange={(id, status) => handleStatusChange(id, status, 'issues')} columns={{'باز': 'باز', 'در حال بررسی': 'در حال بررسی', 'حل‌شده': 'حل‌شده'}} navigateToProfile={navigateToProfile} openModal={openModal} type="issue" setHistoryModalData={setHistoryModalData} /></div>) : (<div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 dark:bg-slate-900 text-gray-500 dark:text-gray-400 border-b dark:border-slate-700"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4">تاریخ</th><th className="p-4"></th></tr></thead><tbody>{filteredIssues.map(row => (<tr key={row.id} className={`border-b dark:border-slate-700 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-blue-600 dark:text-white" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4"><div className="flex items-center gap-2">{row.technical_review && <div className="bg-indigo-100 p-1 rounded-md text-indigo-600" title="بررسی فنی"><Wrench size={12}/></div>}<span className="truncate max-w-xs dark:text-gray-300">{row.desc_text}</span></div></td><td className="p-4"><span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-600 text-xs border border-blue-100">{row.status}</span></td><td className="p-4 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4 font-mono text-xs text-gray-400">{formatDate(row.created_at)}</td><td className="p-4 text-left"><button onClick={() => openModal('issue', row)} className="text-gray-400 hover:text-blue-600"><Edit size={16}/></button></td></tr>))}</tbody></table></div>)}
+              {!issues.length ? <div className="space-y-4"><Skeleton className="h-12 w-full"/><Skeleton className="h-12 w-full"/><Skeleton className="h-12 w-full"/></div> : issueViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredIssues} onStatusChange={(id, status) => handleStatusChange(id, status, 'issues')} columns={{'باز': 'باز', 'در حال بررسی': 'در حال بررسی', 'حل‌شده': 'حل‌شده'}} navigateToProfile={navigateToProfile} openModal={openModal} type="issue" setHistoryModalData={setHistoryModalData} /></div>) : (<div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 dark:bg-slate-900 text-gray-500 dark:text-gray-400 border-b dark:border-slate-700"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4">تاریخ</th><th className="p-4"></th></tr></thead><tbody>{filteredIssues.map(row => (<tr key={row.id} className={`border-b dark:border-slate-700 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-blue-600 dark:text-white" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4"><div className="flex items-center gap-2">{row.technical_review && <div className="bg-indigo-100 p-1 rounded-md text-indigo-600" title="بررسی فنی"><Wrench size={12}/></div>}<span className="truncate max-w-xs dark:text-gray-300">{row.desc_text}</span></div></td><td className="p-4"><span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-600 text-xs border border-blue-100">{row.status}</span></td><td className="p-4 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4 font-mono text-xs text-gray-400">{formatDate(row.created_at)}</td><td className="p-4 text-left"><button onClick={() => openModal('issue', row)} className="text-gray-400 hover:text-blue-600"><Edit size={16}/></button></td></tr>))}</tbody></table></div>)}
             </section>
           )}
           {activeTab === 'features' && (
             <section className="h-full flex flex-col">
               <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-2xl border shadow-sm">
                 <div className="flex gap-2 bg-slate-100 p-1 rounded-xl"><button onClick={() => setFeatureViewMode('table')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${featureViewMode === 'table' ? 'bg-white shadow text-purple-600' : 'text-gray-500'}`}><List size={16}/> جدول</button><button onClick={() => setFeatureViewMode('kanban')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${featureViewMode === 'kanban' ? 'bg-white shadow text-purple-600' : 'text-gray-500'}`}><Columns size={16}/> کانبان</button></div>
-                <div className="flex gap-2"><button onClick={() => { setActiveTab('ai-analysis'); }} className="bg-white text-purple-600 px-4 py-2 rounded-xl text-sm font-bold border border-purple-200 hover:bg-purple-50 flex items-center gap-2"><Sparkles size={16}/> تحلیل هوشمند</button><button onClick={() => openModal('feature')} className="bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-purple-200 flex items-center gap-2"><Plus size={16}/> ثبت فیچر</button></div>
+                <div className="flex gap-2">
+                    <button onClick={() => downloadCSV(filteredFeatures, 'features-report')} className="bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-green-200 flex items-center gap-2 hover:bg-green-700 transition"><Download size={16}/> CSV</button>
+                    <button onClick={() => { setActiveTab('ai-analysis'); }} className="bg-white text-purple-600 px-4 py-2 rounded-xl text-sm font-bold border border-purple-200 hover:bg-purple-50 flex items-center gap-2"><Sparkles size={16}/> تحلیل هوشمند</button>
+                    <button onClick={() => openModal('feature')} className="bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-purple-200 flex items-center gap-2"><Plus size={16}/> ثبت فیچر</button>
+                </div>
               </div>
-              {featureViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredFeatures} onStatusChange={(id, status) => handleStatusChange(id, status, 'features')} columns={{'بررسی نشده': 'بررسی نشده', 'در تحلیل': 'در تحلیل', 'در توسعه': 'در توسعه', 'انجام شد': 'انجام شد'}} navigateToProfile={navigateToProfile} openModal={openModal} type="feature" setHistoryModalData={setHistoryModalData} /></div>) : (<div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 dark:bg-slate-900 text-gray-500 dark:text-gray-400 border-b dark:border-slate-700"><tr><th className="p-4">کاربر</th><th className="p-4">عنوان</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4"></th></tr></thead><tbody>{filteredFeatures.map(row => (<tr key={row.id} className={`border-b dark:border-slate-700 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-purple-600 dark:text-white" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4 font-bold dark:text-white">{row.title}</td><td className="p-4 truncate max-w-xs dark:text-gray-300">{row.desc_text}</td><td className="p-4"><span className="px-2 py-1 rounded-lg bg-purple-50 text-purple-600 text-xs border border-purple-100">{row.status}</span></td><td className="p-4 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4 text-left"><button onClick={() => openModal('feature', row)} className="text-gray-400 hover:text-purple-600"><Edit size={16}/></button></td></tr>))}</tbody></table></div>)}
+              {!features.length ? <div className="space-y-4"><Skeleton className="h-12 w-full"/><Skeleton className="h-12 w-full"/><Skeleton className="h-12 w-full"/></div> : featureViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredFeatures} onStatusChange={(id, status) => handleStatusChange(id, status, 'features')} columns={{'بررسی نشده': 'بررسی نشده', 'در تحلیل': 'در تحلیل', 'در توسعه': 'در توسعه', 'انجام شد': 'انجام شد'}} navigateToProfile={navigateToProfile} openModal={openModal} type="feature" setHistoryModalData={setHistoryModalData} /></div>) : (<div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 dark:bg-slate-900 text-gray-500 dark:text-gray-400 border-b dark:border-slate-700"><tr><th className="p-4">کاربر</th><th className="p-4">عنوان</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4"></th></tr></thead><tbody>{filteredFeatures.map(row => (<tr key={row.id} className={`border-b dark:border-slate-700 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-purple-600 dark:text-white" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4 font-bold dark:text-white">{row.title}</td><td className="p-4 truncate max-w-xs dark:text-gray-300">{row.desc_text}</td><td className="p-4"><span className="px-2 py-1 rounded-lg bg-purple-50 text-purple-600 text-xs border border-purple-100">{row.status}</span></td><td className="p-4 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4 text-left"><button onClick={() => openModal('feature', row)} className="text-gray-400 hover:text-purple-600"><Edit size={16}/></button></td></tr>))}</tbody></table></div>)}
             </section>
           )}
           {activeTab === 'users' && (profileSearch ? <UserProfile usersData={allUsers} issues={issues} frozen={frozen} features={features} refunds={refunds} onboardings={onboardings} meetings={meetings} openModal={openModal} profileSearch={profileSearch} setProfileSearch={setProfileSearch} /> : <UsersTab users={allUsers} navigateToProfile={navigateToProfile} />)}
@@ -730,9 +801,12 @@ export default function App() {
              <div className="h-full flex flex-col">
               <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-2xl border shadow-sm">
                 <div className="flex gap-2 bg-slate-100 p-1 rounded-xl"><button onClick={() => setFrozenViewMode('table')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${frozenViewMode === 'table' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><List size={16}/> جدول</button><button onClick={() => setFrozenViewMode('kanban')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${frozenViewMode === 'kanban' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><Columns size={16}/> کانبان</button></div>
-                <button onClick={() => openModal('frozen')} className="bg-gray-800 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2"><Plus size={16}/> ثبت فریز</button>
+                <div className="flex gap-2">
+                    <button onClick={() => downloadCSV(filteredFrozen, 'frozen-report')} className="bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-green-200 flex items-center gap-2 hover:bg-green-700 transition"><Download size={16}/> CSV</button>
+                    <button onClick={() => openModal('frozen')} className="bg-gray-800 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2"><Plus size={16}/> ثبت فریز</button>
+                </div>
               </div>
-              {frozenViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredFrozen} onStatusChange={(id, status) => handleStatusChange(id, status, 'frozen')} columns={{'فریز': 'فریز', 'در حال رفع': 'در حال رفع', 'رفع شد': 'رفع شد'}} navigateToProfile={navigateToProfile} openModal={openModal} type="frozen" setHistoryModalData={setHistoryModalData} /></div>) : (<div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 dark:bg-slate-900 text-gray-500 dark:text-gray-400 border-b dark:border-slate-700"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4"></th></tr></thead><tbody>{filteredFrozen.map(row => (<tr key={row.id} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-blue-600 dark:text-white" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4 dark:text-gray-300">{row.desc_text}</td><td className="p-4 dark:text-gray-300">{row.status}</td><td className="p-4 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4"><button onClick={() => openModal('frozen', row)}><Edit size={16} className="text-gray-400"/></button></td></tr>))}</tbody></table></div>)}
+              {!frozen.length ? <div className="space-y-4"><Skeleton className="h-12 w-full"/><Skeleton className="h-12 w-full"/><Skeleton className="h-12 w-full"/></div> : frozenViewMode === 'kanban' ? (<div className="flex-1 overflow-hidden"><KanbanBoard items={filteredFrozen} onStatusChange={(id, status) => handleStatusChange(id, status, 'frozen')} columns={{'فریز': 'فریز', 'در حال رفع': 'در حال رفع', 'رفع شد': 'رفع شد'}} navigateToProfile={navigateToProfile} openModal={openModal} type="frozen" setHistoryModalData={setHistoryModalData} /></div>) : (<div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-200 dark:border-slate-700 overflow-hidden overflow-x-auto"><table className="w-full text-sm text-right whitespace-nowrap"><thead className="bg-slate-50 dark:bg-slate-900 text-gray-500 dark:text-gray-400 border-b dark:border-slate-700"><tr><th className="p-4">کاربر</th><th className="p-4">توضیح</th><th className="p-4">وضعیت</th><th className="p-4">ثبت کننده</th><th className="p-4"></th></tr></thead><tbody>{filteredFrozen.map(row => (<tr key={row.id} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 ${row.flag === 'پیگیری فوری' ? 'bg-red-100 hover:bg-red-200 blink-slow' : row.flag === 'پیگیری مهم' ? 'bg-amber-100 hover:bg-amber-200 blink-slow' : ''}`}><td className="p-4 font-bold cursor-pointer hover:text-blue-600 dark:text-white" onClick={() => navigateToProfile(row.username)}>{row.username}</td><td className="p-4 dark:text-gray-300">{row.desc_text}</td><td className="p-4 dark:text-gray-300">{row.status}</td><td className="p-4 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">{row.created_by && <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded">{row.created_by}</span>}{row.history && row.history.length > 0 && <button onClick={() => setHistoryModalData(row.history)} className="text-blue-400 hover:text-blue-600"><History size={14}/></button>}</td><td className="p-4"><button onClick={() => openModal('frozen', row)}><Edit size={16} className="text-gray-400"/></button></td></tr>))}</tbody></table></div>)}
              </div>
           )}
           {activeTab === 'refunds' && (
@@ -742,9 +816,12 @@ export default function App() {
                         <button onClick={() => setRefundViewMode('table')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${refundViewMode === 'table' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><List size={16}/> جدول</button>
                         <button onClick={() => setRefundViewMode('kanban')} className={`p-2 rounded-lg text-xs font-bold flex gap-1 ${refundViewMode === 'kanban' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}><Columns size={16}/> کانبان</button>
                     </div>
-                    <button onClick={() => openModal('refund')} className="bg-gray-800 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2"><Plus size={16}/> ثبت بازگشت وجه</button>
+                    <div className="flex gap-2">
+                        <button onClick={() => downloadCSV(filteredRefunds, 'refunds-report')} className="bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-green-200 flex items-center gap-2 hover:bg-green-700 transition"><Download size={16}/> CSV</button>
+                        <button onClick={() => openModal('refund')} className="bg-gray-800 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2"><Plus size={16}/> ثبت بازگشت وجه</button>
+                    </div>
                 </div>
-                {refundViewMode === 'kanban' ? (
+                {!refunds.length ? <div className="space-y-4"><Skeleton className="h-12 w-full"/><Skeleton className="h-12 w-full"/><Skeleton className="h-12 w-full"/></div> : refundViewMode === 'kanban' ? (
                      <div className="flex-1 overflow-hidden">
                        <KanbanBoard 
                            items={filteredRefunds} 
